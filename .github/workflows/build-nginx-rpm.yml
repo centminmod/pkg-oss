@@ -101,7 +101,8 @@ jobs:
       - name: Verify RPM paths
         run: |
           echo "=== Checking Centmin Mod paths in main RPM ==="
-          main_rpm=$(ls output/centminmod-nginx-[0-9]*.x86_64.rpm 2>/dev/null | head -1)
+          # Handle crypto-variant package names (centminmod-nginx-awslc-*.rpm etc.)
+          main_rpm=$(ls output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
           if [ -n "$main_rpm" ]; then
             echo "Checking: $main_rpm"
             rpm -qlp "$main_rpm" | grep -c '/usr/local/nginx' && echo "PASS: /usr/local/nginx paths found" || echo "FAIL: no /usr/local/nginx paths"
@@ -119,7 +120,7 @@ jobs:
         run: |
           docker run --rm --user root -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }} bash -c '
             echo "=== Installing RPM and running nginx -V ==="
-            main_rpm=$(ls /output/centminmod-nginx-[0-9]*.x86_64.rpm 2>/dev/null | head -1)
+            main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
             if [ -z "$main_rpm" ]; then
               echo "FAIL: main RPM not found"
               exit 1
