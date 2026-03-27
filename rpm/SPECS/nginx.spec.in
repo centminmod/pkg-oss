@@ -189,16 +189,24 @@ cd %{bdir}
 echo "AWS-LC built and installed to %{bdir}/awslc-install"
 %endif
 
-./configure %{BASE_CONFIGURE_ARGS} %%CRYPTO_CONFIGURE_ARGS%% \
-    --with-cc-opt="%{WITH_CC_OPT}" \
-    --with-ld-opt="%{WITH_LD_OPT}" \
+%if "%{crypto_lib}" == "awslc"
+%define CRYPTO_CC_OPT -I%{bdir}/awslc-install/include
+%define CRYPTO_LD_OPT -L%{bdir}/awslc-install/lib64 -lssl -lcrypto -lpthread -ldl
+%else
+%define CRYPTO_CC_OPT %{nil}
+%define CRYPTO_LD_OPT %{nil}
+%endif
+
+./configure %{BASE_CONFIGURE_ARGS} \
+    --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT}" \
+    --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT}" \
     --with-debug
 make %{?_smp_mflags}
 %{__mv} %{bdir}/objs/nginx \
     %{bdir}/objs/nginx-debug
-./configure %{BASE_CONFIGURE_ARGS} %%CRYPTO_CONFIGURE_ARGS%% \
-    --with-cc-opt="%{WITH_CC_OPT}" \
-    --with-ld-opt="%{WITH_LD_OPT}"
+./configure %{BASE_CONFIGURE_ARGS} \
+    --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT}" \
+    --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT}"
 make %{?_smp_mflags}
 
 %install

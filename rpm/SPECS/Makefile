@@ -61,11 +61,9 @@ ifeq ($(CRYPTO),awslc)
 include $(CONTRIB)/src/awslc/version
 CRYPTO_PACKAGE_SUFFIX=	-awslc
 CRYPTO_SOURCES=	aws-lc-$(AWSLC_VERSION).tar.gz
-CRYPTO_CONFIGURE_ARGS=	--with-cc-opt='-I%{bdir}/awslc-install/include' --with-ld-opt='-L%{bdir}/awslc-install/lib64 -lssl -lcrypto -lpthread -ldl'
 else
 CRYPTO_PACKAGE_SUFFIX=
 CRYPTO_SOURCES=
-CRYPTO_CONFIGURE_ARGS=
 AWSLC_VERSION=
 endif
 
@@ -227,7 +225,6 @@ endif
 		-e "s#%%CRYPTO_NAME%%#$$crypto_name#g" \
 		-e "s#%%CRYPTO_SOURCES%%#$$crypto_sources#g" \
 		-e "s#%%CRYPTO_PATCHES%%#$$crypto_patches#g" \
-		-e 's#%%CRYPTO_CONFIGURE_ARGS%%#$(CRYPTO_CONFIGURE_ARGS)#g' \
 		-e 's#%%AWSLC_VERSION%%#$(AWSLC_VERSION)#g' \
 		> nginx$(BASE_SUFFIX).spec ; \
 	sed nginx$(BASE_SUFFIX).rpm-changelog \
@@ -332,8 +329,8 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e 's#%%BASE_CONFIGURE_ARGS%%#$(BASE_CONFIGURE_ARGS)#g' \
 		-e "s#%%BASE_SUFFIX%%#$(BASE_SUFFIX)#g" \
 		-e "s#%%MODULE_CONFIGURE_ARGS%%#$(MODULE_CONFARGS_$(call modname, $*))#g" \
-		-e 's#%%CRYPTO_CONFIGURE_ARGS%%#$(CRYPTO_CONFIGURE_ARGS)#g' \
 		-e 's#%%CRYPTO_PACKAGE_SUFFIX%%#$(CRYPTO_PACKAGE_SUFFIX)#g' \
+		-e 's#%%CRYPTO_NAME%%#$(CRYPTO)#g' \
 		-e "s#%%COPYRIGHT_SOURCE%%#$${module_copyright}#g" \
 		-e "s#%%MODULE_SOURCES%%#$${sources}#g" \
 		-e "s#%%MODULE_PATCHES%%#$${patches}#g" \

@@ -98,9 +98,18 @@ nginx %%SHORT_SUMMARY%%.
 # No -pie for module spec — modules build .so files, not executables
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -Wl,-Bsymbolic-functions
 
+%define crypto_lib %%CRYPTO_NAME%%
+
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 %define MODULE_CONFIGURE_ARGS $(echo "%%MODULE_CONFIGURE_ARGS%%")
-%define CRYPTO_CONFIGURE_ARGS $(echo "%%CRYPTO_CONFIGURE_ARGS%%")
+
+%if "%{crypto_lib}" == "awslc"
+%define CRYPTO_CC_OPT -I%{bdir}/awslc-install/include
+%define CRYPTO_LD_OPT -L%{bdir}/awslc-install/lib64 -lssl -lcrypto -lpthread -ldl
+%else
+%define CRYPTO_CC_OPT %{nil}
+%define CRYPTO_LD_OPT %{nil}
+%endif
 
 %prep
 %setup -qcTn %{name}-%{base_version}
@@ -123,9 +132,9 @@ echo "GCC version: $(gcc --version | head -1)"
 %%MODULE_PREBUILD%%
 cd %{bdir}
 %%MODULE_ENV%%
-./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
-	--with-cc-opt="%{WITH_CC_OPT} %%MODULE_CC_OPT_DEBUG%%" \
-	--with-ld-opt="%{WITH_LD_OPT} %%MODULE_LD_OPT_DEBUG%%" \
+./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} \
+	--with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %%MODULE_CC_OPT_DEBUG%%" \
+	--with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %%MODULE_LD_OPT_DEBUG%%" \
 	--with-debug
 make %{?_smp_mflags} modules
 for so in `find %{bdir}/objs/ -type f -name "*.so"`; do
@@ -133,9 +142,9 @@ debugso=`echo $so | sed -e 's|\.so$|-debug.so|'`
 mv $so $debugso
 done
 %%MODULE_ENV%%
-./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
-	--with-cc-opt="%{WITH_CC_OPT} %%MODULE_CC_OPT%%" \
-	--with-ld-opt="%{WITH_LD_OPT} %%MODULE_LD_OPT%%"
+./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} \
+	--with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %%MODULE_CC_OPT%%" \
+	--with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %%MODULE_LD_OPT%%"
 make %{?_smp_mflags} modules
 
 %install
