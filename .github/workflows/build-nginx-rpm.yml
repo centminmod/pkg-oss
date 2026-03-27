@@ -38,7 +38,7 @@ jobs:
         run: docker build -f docker/Dockerfile.rpmbuild-el${{ matrix.el_version }} -t rpmbuild:el${{ matrix.el_version }} .
 
       - name: Build RPMs
-        run: mkdir -p output && docker run --rm -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
+        run: mkdir -p output && chmod 777 output && docker run --rm -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
 
       - name: List built RPMs
         run: ls -la output/
