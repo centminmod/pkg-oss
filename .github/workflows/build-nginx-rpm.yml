@@ -38,10 +38,55 @@ jobs:
         run: docker build -f docker/Dockerfile.rpmbuild-el${{ matrix.el_version }} -t rpmbuild:el${{ matrix.el_version }} .
 
       - name: Build RPMs
-        run: mkdir -p output && docker run --rm -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
+        run: mkdir -p output && chmod 777 output && docker run --rm -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
 
       - name: List built RPMs
-        run: ls -la output/
+        run: ls -lh output/
+
+      - name: Verify RPM packages
+        run: |
+          echo "=== RPM package verification ==="
+          for rpm in output/*.rpm; do
+            [ -f "$rpm" ] || continue
+            echo ""
+            echo "--- $(basename $rpm) ---"
+            echo ""
+            echo ":: rpm -qip (package info) ::"
+            rpm -qip "$rpm"
+            echo ""
+            echo ":: rpm -qlp (file list) ::"
+            rpm -qlp "$rpm" | head -50
+            echo ""
+            echo ":: rpm -qp --provides ::"
+            rpm -qp --provides "$rpm"
+            echo ""
+            echo ":: rpm -qp --requires ::"
+            rpm -qp --requires "$rpm"
+            echo ""
+            echo ":: rpm -qp --conflicts ::"
+            rpm -qp --conflicts "$rpm" || true
+            echo ""
+            echo ":: rpm -Kp (signature/digest check) ::"
+            rpm -Kp "$rpm" || true
+            echo "==============================="
+          done
+
+      - name: Verify RPM paths
+        run: |
+          echo "=== Checking Centmin Mod paths in main RPM ==="
+          main_rpm=$(ls output/centminmod-nginx-[0-9]*.x86_64.rpm 2>/dev/null | head -1)
+          if [ -n "$main_rpm" ]; then
+            echo "Checking: $main_rpm"
+            rpm -qlp "$main_rpm" | grep -c '/usr/local/nginx' && echo "PASS: /usr/local/nginx paths found" || echo "FAIL: no /usr/local/nginx paths"
+            rpm -qlp "$main_rpm" | grep -c '/usr/local/sbin/nginx' && echo "PASS: /usr/local/sbin/nginx binary found" || echo "FAIL: no /usr/local/sbin/nginx"
+            rpm -qip "$main_rpm" | grep -q 'centminmod-nginx' && echo "PASS: package name is centminmod-nginx" || echo "FAIL: wrong package name"
+            rpm -qip "$main_rpm" | grep -q 'Centmin Mod' && echo "PASS: vendor is Centmin Mod" || echo "FAIL: wrong vendor"
+            rpm -qp --provides "$main_rpm" | grep -q 'nginx =' && echo "PASS: provides nginx compatibility" || echo "FAIL: missing nginx provides"
+            rpm -qp --conflicts "$main_rpm" | grep -q 'nginx' && echo "PASS: conflicts with stock nginx" || echo "FAIL: missing nginx conflicts"
+          else
+            echo "FAIL: main RPM not found"
+            exit 1
+          fi
 
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
