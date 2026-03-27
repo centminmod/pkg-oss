@@ -2,6 +2,7 @@ FROM almalinux:9
 
 # Install build dependencies
 RUN dnf -y groupinstall 'Development Tools' && \
+    dnf -y install epel-release && \
     dnf -y install zlib-devel pcre2-devel openssl-devel systemd-devel \
     wget tar gzip xz rpm-build rpmdevtools \
     libxml2 libxslt \
