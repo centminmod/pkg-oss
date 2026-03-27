@@ -88,6 +88,24 @@ jobs:
             exit 1
           fi
 
+      - name: Verify nginx -V output
+        run: |
+          docker run --rm --user root -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }} bash -c '
+            echo "=== Installing RPM and running nginx -V ==="
+            main_rpm=$(ls /output/centminmod-nginx-[0-9]*.x86_64.rpm 2>/dev/null | head -1)
+            if [ -z "$main_rpm" ]; then
+              echo "FAIL: main RPM not found"
+              exit 1
+            fi
+            rpm -ivh --nodeps "$main_rpm" 2>&1
+            echo ""
+            echo ":: nginx -V ::"
+            /usr/local/sbin/nginx -V 2>&1
+            echo ""
+            echo ":: nginx -t (config syntax check) ::"
+            /usr/local/sbin/nginx -t 2>&1 || true
+          '
+
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
         with:
