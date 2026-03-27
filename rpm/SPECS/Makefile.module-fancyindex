@@ -1,0 +1,34 @@
+MODULES+=	fancyindex
+
+MODULE_SUMMARY_fancyindex=	3rd-party fancyindex dynamic module
+
+MODULE_CONTRIB_DEPS_fancyindex=	ngx-fancyindex
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_fancyindex),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_fancyindex=	$(NGX_FANCYINDEX_VERSION)
+MODULE_RELEASE_fancyindex=	1
+
+MODULE_VERSION_PREFIX_fancyindex=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_fancyindex=	ngx-fancyindex-$(NGX_FANCYINDEX_VERSION).tar.gz
+
+MODULE_CONFARGS_fancyindex=	--add-dynamic-module=ngx-fancyindex-$(NGX_FANCYINDEX_VERSION)
+
+define MODULE_POST_fancyindex
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_fancyindex) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_fancyindex_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/aperezdc/ngx-fancyindex
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_fancyindex

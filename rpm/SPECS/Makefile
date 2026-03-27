@@ -45,7 +45,7 @@ MODULE_TARGET_PREFIX=$(TARGET_VERSION)+
 
 PACKAGE_VENDOR=	Centmin Mod <centminmod@centminmod.com>
 
-BASE_MODULES=	acme geoip image-filter njs otel perl xslt
+BASE_MODULES=	brotli cache-purge echo fancyindex geoip2 headers-more image-filter lua ndk njs set-misc xslt
 
 MODULES=
 

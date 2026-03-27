@@ -1,0 +1,34 @@
+MODULES+=	memc
+
+MODULE_SUMMARY_memc=	3rd-party memc (memcached) dynamic module
+
+MODULE_CONTRIB_DEPS_memc=	memc-nginx-module
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_memc),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_memc=	$(MEMC_NGINX_MODULE_VERSION)
+MODULE_RELEASE_memc=	1
+
+MODULE_VERSION_PREFIX_memc=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_memc=	memc-nginx-module-$(MEMC_NGINX_MODULE_VERSION).tar.gz
+
+MODULE_CONFARGS_memc=	--add-dynamic-module=memc-nginx-module-$(MEMC_NGINX_MODULE_VERSION)
+
+define MODULE_POST_memc
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_memc) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_memc_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/openresty/memc-nginx-module
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_memc

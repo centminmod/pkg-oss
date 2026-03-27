@@ -1,0 +1,34 @@
+MODULES+=	srcache
+
+MODULE_SUMMARY_srcache=	3rd-party srcache dynamic module
+
+MODULE_CONTRIB_DEPS_srcache=	srcache-nginx-module
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_srcache),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_srcache=	$(SRCACHE_NGINX_MODULE_VERSION)
+MODULE_RELEASE_srcache=	1
+
+MODULE_VERSION_PREFIX_srcache=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_srcache=	srcache-nginx-module-$(SRCACHE_NGINX_MODULE_VERSION).tar.gz
+
+MODULE_CONFARGS_srcache=	--add-dynamic-module=srcache-nginx-module-$(SRCACHE_NGINX_MODULE_VERSION)
+
+define MODULE_POST_srcache
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_srcache) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_srcache_filter_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/openresty/srcache-nginx-module
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_srcache
