@@ -49,9 +49,7 @@ BuildRequires: openssl11-devel >= 1.1.1
 Epoch: %{epoch}
 Requires(pre): shadow-utils
 Requires: procps-ng
-%if "%{crypto_lib}" != "awslc"
 BuildRequires: openssl-devel >= 1.1.1
-%endif
 BuildRequires: gcc-toolset-14-gcc gcc-toolset-14-gcc-c++
 %define _debugsource_template %{nil}
 %endif
@@ -61,9 +59,7 @@ BuildRequires: gcc-toolset-14-gcc gcc-toolset-14-gcc-c++
 Epoch: %{epoch}
 Requires(pre): shadow-utils
 Requires: procps-ng
-%if "%{crypto_lib}" != "awslc"
 BuildRequires: openssl-devel
-%endif
 BuildRequires: gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
 %define _debugsource_template %{nil}
 %endif
@@ -73,9 +69,7 @@ BuildRequires: gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
 Epoch: %{epoch}
 Requires(pre): shadow-utils
 Requires: procps-ng
-%if "%{crypto_lib}" != "awslc"
 BuildRequires: openssl-devel
-%endif
 %define _debugsource_template %{nil}
 %endif
 
@@ -174,19 +168,11 @@ tar xzf %{SOURCE50}
 echo "GCC version: $(gcc --version | head -1)"
 
 %if "%{crypto_lib}" == "awslc"
-# Remove system openssl-devel headers to prevent header conflicts.
-# AWS-LC defines OPENSSL_IS_AWSLC which triggers BoringSSL-compatible
-# code paths, but system openssl headers define incompatible macros
-# (e.g. sk_X509_NAME_find has different arity). Similar to Centmin Mod's
-# nginx-deps isolation approach.
-# Remove system OpenSSL headers to prevent conflicts with AWS-LC
-rpm -e --nodeps openssl-devel 2>/dev/null || true
-rm -rf /usr/include/openssl
-echo "Removed system openssl-devel headers"
-
-# Build AWS-LC from source (static linking)
-# Unset rpmbuild flags — AWS-LC has its own cmake-managed flags,
-# and jitterentropy requires -O0 which conflicts with FORTIFY_SOURCE
+# Build AWS-LC into nginx-dep directory (static linking).
+# Using -isystem ensures AWS-LC headers take priority over system
+# openssl-devel, similar to Centmin Mod's /usr/local/nginx-dep/ approach.
+# Unset rpmbuild CFLAGS — AWS-LC manages its own flags via cmake,
+# and jitterentropy requires -O0 which conflicts with FORTIFY_SOURCE.
 unset CFLAGS CXXFLAGS LDFLAGS
 cd %{bdir}
 mkdir -p awslc-build && cd awslc-build
@@ -200,17 +186,17 @@ cmake \
   -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE \
   -DBUILD_SHARED_LIBS=OFF \
   -DBUILD_TESTING=OFF \
-  -DCMAKE_INSTALL_PREFIX=%{bdir}/awslc-install \
+  -DCMAKE_INSTALL_PREFIX=%{bdir}/nginx-dep \
   ../aws-lc-%%AWSLC_VERSION%%
 ninja-build -j$(nproc)
 ninja-build install
 cd %{bdir}
-echo "AWS-LC built and installed to %{bdir}/awslc-install"
+echo "AWS-LC built and installed to %{bdir}/nginx-dep"
 %endif
 
 %if "%{crypto_lib}" == "awslc"
-%define CRYPTO_CC_OPT -isystem %{bdir}/awslc-install/include
-%define CRYPTO_LD_OPT -L%{bdir}/awslc-install/lib64 -lssl -lcrypto -lpthread -ldl
+%define CRYPTO_CC_OPT -isystem %{bdir}/nginx-dep/include
+%define CRYPTO_LD_OPT -L%{bdir}/nginx-dep/lib64 -lssl -lcrypto -lpthread -ldl
 %else
 %define CRYPTO_CC_OPT %{nil}
 %define CRYPTO_LD_OPT %{nil}
