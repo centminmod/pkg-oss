@@ -3,7 +3,8 @@ FROM almalinux:9
 # Install build dependencies
 RUN dnf -y groupinstall 'Development Tools' && \
     dnf -y install zlib-devel pcre2-devel openssl-devel systemd-devel \
-    wget tar gzip xz rpm-build rpmdevtools && \
+    wget tar gzip xz rpm-build rpmdevtools \
+    libxml2 libxslt && \
     dnf clean all
 
 # Create builder user with rpmbuild directory structure
@@ -15,11 +16,12 @@ RUN useradd -m builder && \
 COPY rpm/SPECS/ /home/builder/rpmbuild/SPECS/
 COPY rpm/SOURCES/ /home/builder/rpmbuild/SOURCES/
 COPY contrib/ /home/builder/contrib/
+COPY docs/ /home/builder/docs/
 
 # Fix ownership
-RUN chown -R builder:builder /home/builder/rpmbuild /home/builder/contrib
+RUN chown -R builder:builder /home/builder/rpmbuild /home/builder/contrib /home/builder/docs
 
 USER builder
 WORKDIR /home/builder/rpmbuild
 
-CMD ["bash", "-c", "cd SPECS && make CONTRIB=/home/builder/contrib nginx.spec && rpmbuild --define '_topdir /home/builder/rpmbuild' -ba SPECS/nginx.spec && cp -r RPMS/* /output/ && cp -r SRPMS/* /output/ 2>/dev/null; echo 'Build complete. RPMs in /output/'"]
+CMD ["bash", "-c", "cd SPECS && make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs nginx.spec && rpmbuild --define '_topdir /home/builder/rpmbuild' -ba SPECS/nginx.spec && cp -r RPMS/* /output/ && cp -r SRPMS/* /output/ 2>/dev/null; echo 'Build complete. RPMs in /output/'"]
