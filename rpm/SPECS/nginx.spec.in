@@ -47,6 +47,7 @@ Epoch: %{epoch}
 Requires(pre): shadow-utils
 Requires: procps-ng
 BuildRequires: openssl-devel >= 1.1.1
+BuildRequires: gcc-toolset-14-gcc gcc-toolset-14-gcc-c++
 %define _debugsource_template %{nil}
 %endif
 
@@ -56,6 +57,7 @@ Epoch: %{epoch}
 Requires(pre): shadow-utils
 Requires: procps-ng
 BuildRequires: openssl-devel
+BuildRequires: gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
 %define _debugsource_template %{nil}
 %endif
 
@@ -75,8 +77,16 @@ BuildRequires: openssl-devel
 
 %define bdir %{_builddir}/nginx-%{base_version}
 
-%define WITH_CC_OPT $(echo %{optflags} $(pcre2-config --cflags)) -fPIC
-%define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -pie
+# Centmin Mod compiler flags — %{optflags} intentionally NOT used because
+# it reflects system GCC defaults, not the gcc-toolset compiler.
+# Dropping %{optflags} loses Red Hat's -specs= annotations but gains explicit
+# control matching CM's build configuration.
+%if 0%{?rhel} >= 10
+%define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
+%else
+%define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-D_FORTIFY_SOURCE=2 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
+%endif
+%define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -pie -Wl,--as-needed -Wl,-Bsymbolic-functions
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 
@@ -125,6 +135,14 @@ a mail proxy server.
 %autosetup -n nginx-%{base_version} -p1
 
 %build
+# Activate GCC toolset for enhanced compiler optimizations
+%if 0%{?rhel} == 8
+. /opt/rh/gcc-toolset-14/enable
+%endif
+%if 0%{?rhel} == 9
+. /opt/rh/gcc-toolset-15/enable
+%endif
+echo "GCC version: $(gcc --version | head -1)"
 ./configure %{BASE_CONFIGURE_ARGS} \
     --with-cc-opt="%{WITH_CC_OPT}" \
     --with-ld-opt="%{WITH_LD_OPT}" \

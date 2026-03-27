@@ -35,12 +35,14 @@ Epoch: %{epoch}
 %if 0%{?rhel} == 8
 %define epoch 1
 Epoch: %{epoch}
+BuildRequires: gcc-toolset-14-gcc gcc-toolset-14-gcc-c++
 %define _debugsource_template %{nil}
 %endif
 
 %if 0%{?rhel} == 9
 %define epoch 1
 Epoch: %{epoch}
+BuildRequires: gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
 %define _debugsource_template %{nil}
 %endif
 
@@ -87,8 +89,14 @@ Provides: %{name}-r%{base_version}
 %description
 nginx %%SHORT_SUMMARY%%.
 
-%define WITH_CC_OPT $(echo %{optflags} $(pcre2-config --cflags))
-%define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,-as-needed
+# Centmin Mod compiler flags — CC_OPT must match nginx.spec.in for ABI compatibility
+%if 0%{?rhel} >= 10
+%define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
+%else
+%define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-D_FORTIFY_SOURCE=2 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
+%endif
+# No -pie for module spec — modules build .so files, not executables
+%define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -Wl,-Bsymbolic-functions
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 %define MODULE_CONFIGURE_ARGS $(echo "%%MODULE_CONFIGURE_ARGS%%")
@@ -103,6 +111,14 @@ ln -s . nginx%{?base_suffix}
 %%MODULE_PREP_PATCHES%%
 
 %build
+# Activate GCC toolset for enhanced compiler optimizations
+%if 0%{?rhel} == 8
+. /opt/rh/gcc-toolset-14/enable
+%endif
+%if 0%{?rhel} == 9
+. /opt/rh/gcc-toolset-15/enable
+%endif
+echo "GCC version: $(gcc --version | head -1)"
 %%MODULE_PREBUILD%%
 cd %{bdir}
 %%MODULE_ENV%%

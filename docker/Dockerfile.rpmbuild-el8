@@ -4,7 +4,8 @@ FROM almalinux:8
 RUN dnf -y groupinstall 'Development Tools' && \
     dnf -y install zlib-devel pcre2-devel openssl-devel systemd-devel \
     wget tar gzip xz rpm-build rpmdevtools \
-    libxml2 libxslt && \
+    libxml2 libxslt \
+    gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ && \
     dnf clean all
 
 # Create builder user with rpmbuild directory structure
