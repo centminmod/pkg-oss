@@ -152,9 +152,9 @@ a mail proxy server.
 %%BASE_PREP_PATCHES%%
 
 %if "%{crypto_lib}" == "awslc"
-# Extract AWS-LC source and apply nginx compatibility patches
+# Extract AWS-LC source
 tar xzf %{SOURCE50}
-%patch -P050 -p1
+# Note: nginx 1.29.7 has native AWS-LC support — no patches needed
 %endif
 
 %build
