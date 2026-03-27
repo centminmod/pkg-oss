@@ -55,9 +55,14 @@ BUILD_INFO?=	centminmod
 
 # Crypto library selection (default: system OpenSSL)
 # Usage: make CRYPTO=awslc nginx.spec
+#        make CRYPTO=openssl nginx.spec
 CRYPTO?=	system
 
-ifeq ($(CRYPTO),awslc)
+ifeq ($(CRYPTO),openssl)
+include $(CONTRIB)/src/openssl/version
+CRYPTO_PACKAGE_SUFFIX=	-openssl
+CRYPTO_SOURCES=	openssl-$(OPENSSL_CUSTOM_VERSION).tar.gz
+else ifeq ($(CRYPTO),awslc)
 include $(CONTRIB)/src/awslc/version
 CRYPTO_PACKAGE_SUFFIX=	-awslc
 CRYPTO_SOURCES=	aws-lc-$(AWSLC_VERSION).tar.gz
@@ -65,6 +70,22 @@ else
 CRYPTO_PACKAGE_SUFFIX=
 CRYPTO_SOURCES=
 AWSLC_VERSION=
+OPENSSL_CUSTOM_VERSION=
+endif
+
+# Compression library selection (default: system zlib)
+# Usage: make ZLIB=cloudflare nginx.spec
+ZLIB?=	system
+
+ifeq ($(ZLIB),cloudflare)
+include $(CONTRIB)/src/cf-zlib/version
+ZLIB_SOURCES=	zlib-$(CF_ZLIB_COMMIT).tar.gz
+ZLIB_CONFIGURE_ARGS=	--with-zlib=../zlib-$(CF_ZLIB_COMMIT) --with-zlib-opt=-fPIC
+else
+ZLIB_SOURCES=
+ZLIB_CONFIGURE_ARGS=
+CF_ZLIB_COMMIT=
+CF_ZLIB_SHORT=
 endif
 
 BASE_CONFIGURE_ARGS=\
@@ -180,7 +201,7 @@ ifeq ($(BASE_TARGET), plus)
 	cp -v $(DOCS)/EULA* $(SRCPATH)
 	cp -v $(DOCS)/CHANGES $(SRCPATH)
 endif
-	@echo "===> Creating $@ (CRYPTO=$(CRYPTO))"
+	@echo "===> Creating $@ (CRYPTO=$(CRYPTO), ZLIB=$(ZLIB))"
 	@{ \
 	set -e ; \
 	cp -p $(DOCS)/nginx.copyright $(SRCPATH) ; \
@@ -196,7 +217,15 @@ endif
 	crypto_sources="" ; \
 	crypto_patches="" ; \
 	crypto_name="system" ; \
-	if [ "$(CRYPTO)" = "awslc" ]; then \
+	if [ "$(CRYPTO)" = "openssl" ]; then \
+		crypto_name="openssl" ; \
+		i=51 ; \
+		for src in $(CRYPTO_SOURCES); do \
+			ln -sf $(CONTRIB)/tarballs/$${src} $(SRCPATH)/$${src} ; \
+			crypto_sources="$${crypto_sources}Source$${i}: $${src}\n" ; \
+			i=$$(($${i}+1)) ; \
+		done ; \
+	elif [ "$(CRYPTO)" = "awslc" ]; then \
 		crypto_name="awslc" ; \
 		i=50 ; \
 		for src in $(CRYPTO_SOURCES); do \
@@ -210,6 +239,17 @@ endif
 			cp -v $$p $(SRCPATH) ; \
 			crypto_patches="$${crypto_patches}Patch0$${j}: $${pn}\n" ; \
 			j=$$(($${j}+1)) ; \
+		done ; \
+	fi ; \
+	zlib_sources="" ; \
+	zlib_name="system" ; \
+	if [ "$(ZLIB)" = "cloudflare" ]; then \
+		zlib_name="cloudflare" ; \
+		i=60 ; \
+		for src in $(ZLIB_SOURCES); do \
+			ln -sf $(CONTRIB)/tarballs/$${src} $(SRCPATH)/$${src} ; \
+			zlib_sources="$${zlib_sources}Source$${i}: $${src}\n" ; \
+			i=$$(($${i}+1)) ; \
 		done ; \
 	fi ; \
 	sed nginx$(BASE_SUFFIX).spec.in \
@@ -226,6 +266,11 @@ endif
 		-e "s#%%CRYPTO_SOURCES%%#$$crypto_sources#g" \
 		-e "s#%%CRYPTO_PATCHES%%#$$crypto_patches#g" \
 		-e 's#%%AWSLC_VERSION%%#$(AWSLC_VERSION)#g' \
+		-e 's#%%OPENSSL_CUSTOM_VERSION%%#$(OPENSSL_CUSTOM_VERSION)#g' \
+		-e "s#%%ZLIB_NAME%%#$$zlib_name#g" \
+		-e "s#%%ZLIB_SOURCES%%#$$zlib_sources#g" \
+		-e 's#%%ZLIB_CONFIGURE_ARGS%%#$(ZLIB_CONFIGURE_ARGS)#g' \
+		-e 's#%%CF_ZLIB_COMMIT%%#$(CF_ZLIB_COMMIT)#g' \
 		> nginx$(BASE_SUFFIX).spec ; \
 	sed nginx$(BASE_SUFFIX).rpm-changelog \
 		-e 's#%%BASE_VERSION%%#$(BASE_VERSION)#g' \
@@ -331,6 +376,10 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e "s#%%MODULE_CONFIGURE_ARGS%%#$(MODULE_CONFARGS_$(call modname, $*))#g" \
 		-e 's#%%CRYPTO_PACKAGE_SUFFIX%%#$(CRYPTO_PACKAGE_SUFFIX)#g' \
 		-e 's#%%CRYPTO_NAME%%#$(CRYPTO)#g' \
+		-e 's#%%OPENSSL_CUSTOM_VERSION%%#$(OPENSSL_CUSTOM_VERSION)#g' \
+		-e 's#%%ZLIB_NAME%%#$(ZLIB)#g' \
+		-e 's#%%ZLIB_CONFIGURE_ARGS%%#$(ZLIB_CONFIGURE_ARGS)#g' \
+		-e 's#%%CF_ZLIB_COMMIT%%#$(CF_ZLIB_COMMIT)#g' \
 		-e "s#%%COPYRIGHT_SOURCE%%#$${module_copyright}#g" \
 		-e "s#%%MODULE_SOURCES%%#$${sources}#g" \
 		-e "s#%%MODULE_PATCHES%%#$${patches}#g" \

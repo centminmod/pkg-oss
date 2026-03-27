@@ -22,10 +22,19 @@ on:
         options:
           - system
           - awslc
+          - openssl
+      zlib:
+        description: 'Compression library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - cloudflare
 
 jobs:
   build:
-    name: Build RPM (EL${{ matrix.el_version }}, crypto=${{ inputs.crypto || 'system' }})
+    name: Build RPM (EL${{ matrix.el_version }}, crypto=${{ inputs.crypto || 'system' }}, zlib=${{ inputs.zlib || 'system' }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -46,17 +55,17 @@ jobs:
         run: docker build -f docker/Dockerfile.rpmbuild-el${{ matrix.el_version }} -t rpmbuild:el${{ matrix.el_version }} .
 
       - name: Build RPMs
-        run: mkdir -p output && chmod 777 output && docker run --rm -e CRYPTO=${{ inputs.crypto || 'system' }} -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
+        run: mkdir -p output && chmod 777 output && docker run --rm -e CRYPTO=${{ inputs.crypto || 'system' }} -e ZLIB=${{ inputs.zlib || 'system' }} -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
 
       - name: Verify module spec generation
         run: |
           docker run --rm rpmbuild:el${{ matrix.el_version }} bash -c '
             cd /home/builder/rpmbuild/SPECS
-            echo "=== Verifying module spec generation (CRYPTO=${{ inputs.crypto || 'system' }}) ==="
+            echo "=== Verifying module spec generation (CRYPTO=${{ inputs.crypto || 'system' }}, ZLIB=${{ inputs.zlib || 'system' }}) ==="
             PASS=0
             FAIL=0
             for mod in fancyindex cache-purge echo memc redis2 srcache zstd; do
-              if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs CRYPTO=${{ inputs.crypto || 'system' }} nginx-module-${mod}.spec 2>&1; then
+              if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs CRYPTO=${{ inputs.crypto || 'system' }} ZLIB=${{ inputs.zlib || 'system' }} nginx-module-${mod}.spec 2>&1; then
                 echo "PASS: nginx-module-${mod}.spec generated"
                 PASS=$((PASS+1))
               else

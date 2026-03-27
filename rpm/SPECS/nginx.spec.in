@@ -1,6 +1,8 @@
 #
 # Crypto library selection (set by Makefile CRYPTO variable)
 %define crypto_lib %%CRYPTO_NAME%%
+# Compression library selection (set by Makefile ZLIB variable)
+%define zlib_lib %%ZLIB_NAME%%
 
 # Centmin Mod path macros — NEVER redefine global RPM macros (%{_libdir} etc.)
 %global cm_prefix       /usr/local/nginx
@@ -115,6 +117,7 @@ Source9: nginx.check-reload.sh
 %%BASE_PATCHES%%
 %%CRYPTO_SOURCES%%
 %%CRYPTO_PATCHES%%
+%%ZLIB_SOURCES%%
 
 License: 2-clause BSD-like license
 
@@ -137,6 +140,7 @@ Provides: nginx = %{base_version}-%{base_release}
 Provides: nginx-r%{base_version}
 Provides: centminmod-nginx-r%{base_version}
 Provides: centminmod-nginx-crypto(%%CRYPTO_NAME%%)
+Provides: centminmod-nginx-zlib(%%ZLIB_NAME%%)
 Conflicts: nginx
 
 %if !(0%{?rhel} == 7)
@@ -155,6 +159,16 @@ a mail proxy server.
 # Extract AWS-LC source
 tar xzf %{SOURCE50}
 # Note: nginx 1.29.7 has native AWS-LC support — no patches needed
+%endif
+
+%if "%{crypto_lib}" == "openssl"
+# Extract custom OpenSSL source for --with-openssl= inline build
+tar xzf %{SOURCE51}
+%endif
+
+%if "%{zlib_lib}" == "cloudflare"
+# Extract Cloudflare zlib source for --with-zlib= inline build
+tar xzf %{SOURCE60}
 %endif
 
 %build
@@ -197,19 +211,33 @@ echo "AWS-LC built and installed to %{bdir}/nginx-dep"
 %if "%{crypto_lib}" == "awslc"
 %define CRYPTO_CC_OPT -isystem %{bdir}/nginx-dep/include
 %define CRYPTO_LD_OPT -L%{bdir}/nginx-dep/lib64 -lssl -lcrypto -lpthread -ldl
-%else
+%define CRYPTO_CONFIGURE_ARGS %{nil}
+%endif
+%if "%{crypto_lib}" == "openssl"
 %define CRYPTO_CC_OPT %{nil}
 %define CRYPTO_LD_OPT %{nil}
+%define CRYPTO_CONFIGURE_ARGS --with-openssl=../openssl-%%OPENSSL_CUSTOM_VERSION%% --with-openssl-opt='enable-ec_nistp_64_gcc_128 enable-tls1_3'
+%endif
+%if "%{crypto_lib}" == "system"
+%define CRYPTO_CC_OPT %{nil}
+%define CRYPTO_LD_OPT %{nil}
+%define CRYPTO_CONFIGURE_ARGS %{nil}
 %endif
 
-./configure %{BASE_CONFIGURE_ARGS} \
+%if "%{zlib_lib}" == "cloudflare"
+%define ZLIB_CONFIGURE_ARGS %%ZLIB_CONFIGURE_ARGS%%
+%else
+%define ZLIB_CONFIGURE_ARGS %{nil}
+%endif
+
+./configure %{BASE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
     --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT}" \
     --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT}" \
     --with-debug
 make %{?_smp_mflags}
 %{__mv} %{bdir}/objs/nginx \
     %{bdir}/objs/nginx-debug
-./configure %{BASE_CONFIGURE_ARGS} \
+./configure %{BASE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
     --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT}" \
     --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT}"
 make %{?_smp_mflags}

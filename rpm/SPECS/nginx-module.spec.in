@@ -99,6 +99,7 @@ nginx %%SHORT_SUMMARY%%.
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -Wl,-Bsymbolic-functions
 
 %define crypto_lib %%CRYPTO_NAME%%
+%define zlib_lib %%ZLIB_NAME%%
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 %define MODULE_CONFIGURE_ARGS $(echo "%%MODULE_CONFIGURE_ARGS%%")
@@ -106,9 +107,23 @@ nginx %%SHORT_SUMMARY%%.
 %if "%{crypto_lib}" == "awslc"
 %define CRYPTO_CC_OPT -isystem %{bdir}/nginx-dep/include
 %define CRYPTO_LD_OPT -L%{bdir}/nginx-dep/lib64 -lssl -lcrypto -lpthread -ldl
-%else
+%define CRYPTO_CONFIGURE_ARGS %{nil}
+%endif
+%if "%{crypto_lib}" == "openssl"
 %define CRYPTO_CC_OPT %{nil}
 %define CRYPTO_LD_OPT %{nil}
+%define CRYPTO_CONFIGURE_ARGS --with-openssl=../openssl-%%OPENSSL_CUSTOM_VERSION%% --with-openssl-opt='enable-ec_nistp_64_gcc_128 enable-tls1_3'
+%endif
+%if "%{crypto_lib}" == "system"
+%define CRYPTO_CC_OPT %{nil}
+%define CRYPTO_LD_OPT %{nil}
+%define CRYPTO_CONFIGURE_ARGS %{nil}
+%endif
+
+%if "%{zlib_lib}" == "cloudflare"
+%define ZLIB_CONFIGURE_ARGS %%ZLIB_CONFIGURE_ARGS%%
+%else
+%define ZLIB_CONFIGURE_ARGS %{nil}
 %endif
 
 %prep
@@ -132,7 +147,7 @@ echo "GCC version: $(gcc --version | head -1)"
 %%MODULE_PREBUILD%%
 cd %{bdir}
 %%MODULE_ENV%%
-./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} \
+./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
 	--with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %%MODULE_CC_OPT_DEBUG%%" \
 	--with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %%MODULE_LD_OPT_DEBUG%%" \
 	--with-debug
@@ -142,7 +157,7 @@ debugso=`echo $so | sed -e 's|\.so$|-debug.so|'`
 mv $so $debugso
 done
 %%MODULE_ENV%%
-./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} \
+./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
 	--with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %%MODULE_CC_OPT%%" \
 	--with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %%MODULE_LD_OPT%%"
 make %{?_smp_mflags} modules

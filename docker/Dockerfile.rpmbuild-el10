@@ -30,12 +30,17 @@ BUILD_DATE=$(date +%d%m%y-%H%M%S) && \
 BUILD_OS=almalinux$(rpm -E %{rhel}) && \
 BUILD_INFO=${BUILD_DATE}-${BUILD_OS}-rpm && \
 CRYPTO=${CRYPTO:-system} && \
+ZLIB=${ZLIB:-system} && \
 cd /home/builder/contrib && make .sum-nginx && \
 if [ \"$CRYPTO\" = \"awslc\" ]; then make .sum-awslc; fi && \
+if [ \"$CRYPTO\" = \"openssl\" ]; then make .sum-openssl; fi && \
+if [ \"$ZLIB\" = \"cloudflare\" ]; then make .sum-cf-zlib; fi && \
 ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOURCES/ && \
 if [ \"$CRYPTO\" = \"awslc\" ]; then ln -sf /home/builder/contrib/tarballs/aws-lc-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
+if [ \"$CRYPTO\" = \"openssl\" ]; then ln -sf /home/builder/contrib/tarballs/openssl-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
+if [ \"$ZLIB\" = \"cloudflare\" ]; then ln -sf /home/builder/contrib/tarballs/zlib-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
 cd /home/builder/rpmbuild/SPECS && \
-make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} nginx.spec && \
+make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} ZLIB=${ZLIB} nginx.spec && \
 rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && \
 find ../RPMS ../SRPMS -name '*.rpm' -exec cp -v {} /output/ \\; && \
 echo 'Build complete. RPMs:' && ls -lh /output/"]
