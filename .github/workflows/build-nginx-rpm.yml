@@ -100,10 +100,75 @@ jobs:
             rpm -ivh --nodeps "$main_rpm" 2>&1
             echo ""
             echo ":: nginx -V ::"
-            /usr/local/sbin/nginx -V 2>&1
+            NGINX_V=$(/usr/local/sbin/nginx -V 2>&1)
+            echo "$NGINX_V"
             echo ""
             echo ":: nginx -t (config syntax check) ::"
             /usr/local/sbin/nginx -t 2>&1 || true
+            echo ""
+            echo "=== Compiler verification ==="
+            PASS=0
+            FAIL=0
+            echo ":: Checking GCC version in built binary ::"
+            if echo "$NGINX_V" | grep -qiE "gcc [0-9]+\.[0-9]+"; then
+              GCC_USED=$(echo "$NGINX_V" | grep -oiE "gcc [0-9]+\.[0-9]+\.[0-9]+" | head -1)
+              echo "Built with: $GCC_USED"
+              EL_VERSION=$(rpm -E %{rhel})
+              case "$EL_VERSION" in
+                8) EXPECTED_GCC="14" ;;
+                9) EXPECTED_GCC="15" ;;
+                10) EXPECTED_GCC="14" ;;
+              esac
+              if echo "$GCC_USED" | grep -q "gcc ${EXPECTED_GCC}\."; then
+                echo "PASS: GCC major version matches expected ($EXPECTED_GCC) for EL${EL_VERSION}"
+                PASS=$((PASS+1))
+              else
+                echo "WARN: GCC version mismatch - expected GCC ${EXPECTED_GCC}, got $GCC_USED"
+                FAIL=$((FAIL+1))
+              fi
+            fi
+            echo ""
+            echo ":: Checking compiler flags in nginx -V ::"
+            for flag in "-O3" "-fstack-protector-strong" "-fstack-clash-protection" "-Wimplicit-fallthrough=0" "--param=ssp-buffer-size=4"; do
+              if echo "$NGINX_V" | grep -q -- "$flag"; then
+                echo "PASS: $flag found"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: $flag NOT found"
+                FAIL=$((FAIL+1))
+              fi
+            done
+            echo ""
+            echo ":: Checking FORTIFY_SOURCE level ::"
+            EL_VERSION=$(rpm -E %{rhel})
+            if [ "$EL_VERSION" = "10" ]; then
+              EXPECTED_FORTIFY="FORTIFY_SOURCE=3"
+            else
+              EXPECTED_FORTIFY="FORTIFY_SOURCE=2"
+            fi
+            if echo "$NGINX_V" | grep -q "$EXPECTED_FORTIFY"; then
+              echo "PASS: $EXPECTED_FORTIFY found (correct for EL${EL_VERSION})"
+              PASS=$((PASS+1))
+            else
+              echo "FAIL: $EXPECTED_FORTIFY NOT found"
+              FAIL=$((FAIL+1))
+            fi
+            echo ""
+            echo ":: Checking linker flags ::"
+            for flag in "--as-needed" "-Bsymbolic-functions"; do
+              if echo "$NGINX_V" | grep -q -- "$flag"; then
+                echo "PASS: $flag found"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: $flag NOT found"
+                FAIL=$((FAIL+1))
+              fi
+            done
+            echo ""
+            echo "=== Verification summary: $PASS passed, $FAIL failed ==="
+            if [ "$FAIL" -gt 0 ]; then
+              echo "WARNING: Some compiler flag checks failed"
+            fi
           '
 
       - name: Upload RPM artifacts
