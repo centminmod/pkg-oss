@@ -8,7 +8,7 @@ RUN dnf -y groupinstall 'Development Tools' && \
     wget tar gzip xz rpm-build rpmdevtools \
     libxml2 libxslt \
     gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ \
-    cmake3 ninja-build golang && \
+    cmake3 ninja-build golang perl-FindBin perl-IPC-Cmd perl-File-Compare perl-File-Copy && \
     dnf clean all
 
 # Create builder user with rpmbuild directory structure
