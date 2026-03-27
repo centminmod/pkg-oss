@@ -30,5 +30,5 @@ ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOUR
 cd /home/builder/rpmbuild/SPECS && \
 make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs nginx.spec && \
 rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && \
-cp -rv ../RPMS/* /output/ && cp -rv ../SRPMS/* /output/ && \
+find ../RPMS ../SRPMS -name '*.rpm' -exec cp -v {} /output/ \\; && \
 echo 'Build complete. RPMs:' && ls -lh /output/"]
