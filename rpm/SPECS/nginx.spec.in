@@ -72,6 +72,9 @@ BuildRequires: openssl-devel
 
 # end of distribution specific definitions
 
+# Crypto library build dependencies (when not using system OpenSSL)
+%%CRYPTO_BUILDREQUIRES%%
+
 %define base_version %%BASE_VERSION%%
 %define base_release %%BASE_RELEASE%%%{?dist}.cmm
 
@@ -91,7 +94,7 @@ BuildRequires: openssl-devel
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 
 Summary: High performance web server (Centmin Mod)
-Name: centminmod-nginx
+Name: centminmod-nginx%%CRYPTO_PACKAGE_SUFFIX%%
 Version: %{base_version}
 Release: %{base_release}
 Vendor: %%PACKAGE_VENDOR%%
@@ -110,6 +113,8 @@ Source8: nginx.copyright
 Source9: nginx.check-reload.sh
 
 %%BASE_PATCHES%%
+%%CRYPTO_SOURCES%%
+%%CRYPTO_PATCHES%%
 
 License: 2-clause BSD-like license
 
@@ -121,6 +126,7 @@ Provides: webserver
 Provides: nginx = %{base_version}-%{base_release}
 Provides: nginx-r%{base_version}
 Provides: centminmod-nginx-r%{base_version}
+Provides: centminmod-nginx-crypto(%%CRYPTO_NAME%%)
 Conflicts: nginx
 
 %if !(0%{?rhel} == 7)
@@ -132,7 +138,9 @@ nginx [engine x] is an HTTP and reverse proxy server, as well as
 a mail proxy server.
 
 %prep
-%autosetup -n nginx-%{base_version} -p1
+%setup -q -n nginx-%{base_version}
+%%BASE_PREP_PATCHES%%
+%%CRYPTO_PREP%%
 
 %build
 # Activate GCC toolset for enhanced compiler optimizations
@@ -143,14 +151,15 @@ a mail proxy server.
 . /opt/rh/gcc-toolset-15/enable
 %endif
 echo "GCC version: $(gcc --version | head -1)"
-./configure %{BASE_CONFIGURE_ARGS} \
+%%CRYPTO_PREBUILD%%
+./configure %{BASE_CONFIGURE_ARGS} %%CRYPTO_CONFIGURE_ARGS%% \
     --with-cc-opt="%{WITH_CC_OPT}" \
     --with-ld-opt="%{WITH_LD_OPT}" \
     --with-debug
 make %{?_smp_mflags}
 %{__mv} %{bdir}/objs/nginx \
     %{bdir}/objs/nginx-debug
-./configure %{BASE_CONFIGURE_ARGS} \
+./configure %{BASE_CONFIGURE_ARGS} %%CRYPTO_CONFIGURE_ARGS%% \
     --with-cc-opt="%{WITH_CC_OPT}" \
     --with-ld-opt="%{WITH_LD_OPT}"
 make %{?_smp_mflags}

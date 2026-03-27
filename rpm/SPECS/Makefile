@@ -53,6 +53,21 @@ MODULES=
 
 BUILD_INFO?=	centminmod
 
+# Crypto library selection (default: system OpenSSL)
+# Usage: make CRYPTO=awslc nginx.spec
+CRYPTO?=	system
+
+ifeq ($(CRYPTO),awslc)
+include $(CONTRIB)/src/awslc/version
+CRYPTO_PACKAGE_SUFFIX=	-awslc
+CRYPTO_SOURCES=	aws-lc-$(AWSLC_VERSION).tar.gz
+CRYPTO_CONFIGURE_ARGS=	--with-cc-opt='-I%{bdir}/awslc-install/include' --with-ld-opt='-L%{bdir}/awslc-install/lib64 -lssl -lcrypto -lpthread -ldl'
+else
+CRYPTO_PACKAGE_SUFFIX=
+CRYPTO_SOURCES=
+CRYPTO_CONFIGURE_ARGS=
+endif
+
 BASE_CONFIGURE_ARGS=\
 	--build=$(BUILD_INFO) \
 	--prefix=/usr/local/nginx \
@@ -166,7 +181,7 @@ ifeq ($(BASE_TARGET), plus)
 	cp -v $(DOCS)/EULA* $(SRCPATH)
 	cp -v $(DOCS)/CHANGES $(SRCPATH)
 endif
-	@echo "===> Creating $@"
+	@echo "===> Creating $@ (CRYPTO=$(CRYPTO))"
 	@{ \
 	set -e ; \
 	cp -p $(DOCS)/nginx.copyright $(SRCPATH) ; \
@@ -177,6 +192,34 @@ endif
 	for patch in $$patch_files; do \
 		cp -v $(CONTRIB)/src/nginx$(BASE_SUFFIX)/$$patch $(SRCPATH) ; \
 	done; \
+	base_prep_patches=`for i in $$patch_files; do echo $$i; done | \
+			awk '{ printf "%%patch -P%03d -p1\\\n", NR }'`; \
+	crypto_sources="" ; \
+	crypto_patches="" ; \
+	crypto_prep="" ; \
+	crypto_prebuild="" ; \
+	crypto_br="" ; \
+	crypto_name="system" ; \
+	if [ "$(CRYPTO)" = "awslc" ]; then \
+		crypto_name="awslc" ; \
+		i=50 ; \
+		for src in $(CRYPTO_SOURCES); do \
+			ln -sf $(CONTRIB)/tarballs/$${src} $(SRCPATH)/$${src} ; \
+			crypto_sources="$${crypto_sources}Source$${i}: $${src}\n" ; \
+			i=$$(($${i}+1)) ; \
+		done ; \
+		j=50 ; \
+		awslc_patch_files=`find $(CONTRIB)/src/awslc/ \
+			-type f -name '*.patch' -printf "%f\n" | sort`; \
+		for p in $$awslc_patch_files; do \
+			cp -v $(CONTRIB)/src/awslc/$$p $(SRCPATH) ; \
+			crypto_patches="$${crypto_patches}Patch0$${j}: $$p\n" ; \
+			j=$$(($${j}+1)) ; \
+		done ; \
+		crypto_prep="tar xzf %{SOURCE50}\n%patch -P050 -p1" ; \
+		crypto_prebuild="cd %{bdir}\nmkdir -p awslc-build \&\& cd awslc-build\n%if 0%{?rhel} == 8\ncmake3 \\\\\\\n%else\ncmake \\\\\\\n%endif\n  -GNinja \\\\\\\n  -DCMAKE_BUILD_TYPE=Release \\\\\\\n  -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE \\\\\\\n  -DBUILD_SHARED_LIBS=OFF \\\\\\\n  -DBUILD_TESTING=OFF \\\\\\\n  -DCMAKE_INSTALL_PREFIX=%{bdir}/awslc-install \\\\\\\n  ../aws-lc-$(AWSLC_VERSION)\nninja-build -j$$(nproc)\nninja-build install\ncd %{bdir}" ; \
+		crypto_br="%if 0%{?rhel} == 8\nBuildRequires: cmake3\n%else\nBuildRequires: cmake\n%endif\nBuildRequires: ninja-build\nBuildRequires: golang" ; \
+	fi ; \
 	sed nginx$(BASE_SUFFIX).spec.in \
 		-e 's#%%PACKAGE_VENDOR%%#$(PACKAGE_VENDOR)#g' \
 		-e 's#%%BASE_VERSION%%#$(BASE_VERSION)#g' \
@@ -184,7 +227,16 @@ endif
 		-e 's#%%PLUS_VERSION%%#$(PLUS_VERSION)#g' \
 		-e 's#%%PLUS_RELEASE%%#$(PLUS_RELEASE)#g' \
 		-e "s#%%BASE_PATCHES%%#$$patches#g" \
+		-e "s#%%BASE_PREP_PATCHES%%#$$base_prep_patches#g" \
 		-e 's#%%BASE_CONFIGURE_ARGS%%#$(BASE_CONFIGURE_ARGS)#g' \
+		-e 's#%%CRYPTO_PACKAGE_SUFFIX%%#$(CRYPTO_PACKAGE_SUFFIX)#g' \
+		-e "s#%%CRYPTO_NAME%%#$$crypto_name#g" \
+		-e "s#%%CRYPTO_SOURCES%%#$$crypto_sources#g" \
+		-e "s#%%CRYPTO_PATCHES%%#$$crypto_patches#g" \
+		-e "s#%%CRYPTO_PREP%%#$$crypto_prep#g" \
+		-e "s#%%CRYPTO_PREBUILD%%#$$crypto_prebuild#g" \
+		-e "s#%%CRYPTO_BUILDREQUIRES%%#$$crypto_br#g" \
+		-e 's#%%CRYPTO_CONFIGURE_ARGS%%#$(CRYPTO_CONFIGURE_ARGS)#g' \
 		> nginx$(BASE_SUFFIX).spec ; \
 	sed nginx$(BASE_SUFFIX).rpm-changelog \
 		-e 's#%%BASE_VERSION%%#$(BASE_VERSION)#g' \
@@ -288,6 +340,8 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e 's#%%BASE_CONFIGURE_ARGS%%#$(BASE_CONFIGURE_ARGS)#g' \
 		-e "s#%%BASE_SUFFIX%%#$(BASE_SUFFIX)#g" \
 		-e "s#%%MODULE_CONFIGURE_ARGS%%#$(MODULE_CONFARGS_$(call modname, $*))#g" \
+		-e 's#%%CRYPTO_CONFIGURE_ARGS%%#$(CRYPTO_CONFIGURE_ARGS)#g' \
+		-e 's#%%CRYPTO_PACKAGE_SUFFIX%%#$(CRYPTO_PACKAGE_SUFFIX)#g' \
 		-e "s#%%COPYRIGHT_SOURCE%%#$${module_copyright}#g" \
 		-e "s#%%MODULE_SOURCES%%#$${sources}#g" \
 		-e "s#%%MODULE_PATCHES%%#$${patches}#g" \

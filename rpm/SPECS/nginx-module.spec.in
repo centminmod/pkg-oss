@@ -83,7 +83,7 @@ License: %%MODULE_PACKAGE_LICENSE%%
 BuildRoot: %{_tmppath}/%{name}-%{base_version}-%{base_release}-root
 BuildRequires: zlib-devel
 BuildRequires: pcre2-devel
-Requires: nginx-r%{base_version}
+Requires: centminmod-nginx%%CRYPTO_PACKAGE_SUFFIX%%-r%{base_version}
 Provides: %{name}-r%{base_version}
 
 %description
@@ -100,6 +100,7 @@ nginx %%SHORT_SUMMARY%%.
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 %define MODULE_CONFIGURE_ARGS $(echo "%%MODULE_CONFIGURE_ARGS%%")
+%define CRYPTO_CONFIGURE_ARGS $(echo "%%CRYPTO_CONFIGURE_ARGS%%")
 
 %prep
 %setup -qcTn %{name}-%{base_version}
@@ -122,7 +123,7 @@ echo "GCC version: $(gcc --version | head -1)"
 %%MODULE_PREBUILD%%
 cd %{bdir}
 %%MODULE_ENV%%
-./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} \
+./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
 	--with-cc-opt="%{WITH_CC_OPT} %%MODULE_CC_OPT_DEBUG%%" \
 	--with-ld-opt="%{WITH_LD_OPT} %%MODULE_LD_OPT_DEBUG%%" \
 	--with-debug
@@ -132,7 +133,7 @@ debugso=`echo $so | sed -e 's|\.so$|-debug.so|'`
 mv $so $debugso
 done
 %%MODULE_ENV%%
-./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} \
+./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
 	--with-cc-opt="%{WITH_CC_OPT} %%MODULE_CC_OPT%%" \
 	--with-ld-opt="%{WITH_LD_OPT} %%MODULE_LD_OPT%%"
 make %{?_smp_mflags} modules

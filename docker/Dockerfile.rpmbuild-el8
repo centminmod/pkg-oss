@@ -5,7 +5,8 @@ RUN dnf -y groupinstall 'Development Tools' && \
     dnf -y install zlib-devel pcre2-devel openssl-devel systemd-devel \
     wget tar gzip xz rpm-build rpmdevtools \
     libxml2 libxslt \
-    gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ && \
+    gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ \
+    cmake3 ninja-build golang && \
     dnf clean all
 
 # Create builder user with rpmbuild directory structure
@@ -29,10 +30,13 @@ CMD ["bash", "-ce", "\
 BUILD_DATE=$(date +%d%m%y-%H%M%S) && \
 BUILD_OS=almalinux$(rpm -E %{rhel}) && \
 BUILD_INFO=${BUILD_DATE}-${BUILD_OS}-rpm && \
+CRYPTO=${CRYPTO:-system} && \
 cd /home/builder/contrib && make .sum-nginx && \
+if [ \"$CRYPTO\" = \"awslc\" ]; then make .sum-awslc; fi && \
 ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOURCES/ && \
+if [ \"$CRYPTO\" = \"awslc\" ]; then ln -sf /home/builder/contrib/tarballs/aws-lc-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
 cd /home/builder/rpmbuild/SPECS && \
-make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} nginx.spec && \
+make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} nginx.spec && \
 rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && \
 find ../RPMS ../SRPMS -name '*.rpm' -exec cp -v {} /output/ \\; && \
 echo 'Build complete. RPMs:' && ls -lh /output/"]
