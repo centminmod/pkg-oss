@@ -21,13 +21,6 @@ BuildRequires: openssl-devel
 %endif
 %endif
 
-# Centmin Mod: SUSE not supported, commented out
-#%if 0%{?suse_version} >= 1315
-#%define _group Productivity/Networking/Web/Servers
-#BuildRequires: libopenssl-devel
-#%define _debugsource_template %{nil}
-#%endif
-
 %if (0%{?rhel} == 7) && (0%{?amzn} == 0)
 %define epoch 1
 Epoch: %{epoch}
@@ -94,11 +87,6 @@ Provides: %{name}-r%{base_version}
 %description
 nginx %%SHORT_SUMMARY%%.
 
-# Centmin Mod: SUSE not supported, commented out
-#%if ( 0%{?suse_version} && 0%{?suse_version} < 1600 )
-#%debug_package
-#%endif
-
 %define WITH_CC_OPT $(echo %{optflags} $(pcre2-config --cflags))
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,-as-needed
 
@@ -153,11 +141,6 @@ done
 cd %{bdir}
 grep -v 'usr/src' debugfiles.list > debugfiles.list.new && mv debugfiles.list.new debugfiles.list
 cat /dev/null > debugsources.list
-# Centmin Mod: SUSE not supported, commented out
-#%if 0%{?suse_version} >= 1500
-#cat /dev/null > debugsourcefiles.list
-#%endif
-
 %clean
 %{__rm} -rf $RPM_BUILD_ROOT
 

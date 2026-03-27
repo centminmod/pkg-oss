@@ -24,11 +24,11 @@ RUN chown -R builder:builder /home/builder/rpmbuild /home/builder/contrib /home/
 USER builder
 WORKDIR /home/builder/rpmbuild
 
-CMD ["bash", "-c", "\
+CMD ["bash", "-ce", "\
 cd /home/builder/contrib && make .sum-nginx && \
 ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOURCES/ && \
 cd /home/builder/rpmbuild/SPECS && \
 make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs nginx.spec && \
 rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && \
-cp -r ../RPMS/* /output/ && cp -r ../SRPMS/* /output/ 2>/dev/null; \
-echo 'Build complete. RPMs in /output/'"]
+cp -rv ../RPMS/* /output/ && cp -rv ../SRPMS/* /output/ && \
+echo 'Build complete. RPMs:' && ls -lh /output/"]

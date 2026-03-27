@@ -68,27 +68,6 @@ BuildRequires: openssl-devel
 %define _debugsource_template %{nil}
 %endif
 
-# Centmin Mod: SUSE support disabled (EL8/9/10 only)
-# Kept commented for upstream merge compatibility
-#%if 0%{?suse_version} >= 1315
-#%define _group Productivity/Networking/Web/Servers
-#%define nginx_loggroup trusted
-#Requires(pre): shadow
-#Requires: procps
-#BuildRequires: libopenssl-devel
-#%define _debugsource_template %{nil}
-#%endif
-
-# Centmin Mod: Fedora/Amazon Linux 2023 support disabled (EL8/9/10 only)
-#%if 0%{?fedora}
-#%define _debugsource_template %{nil}
-#%global _hardened_build 1
-#%define _group System Environment/Daemons
-#Requires: procps-ng
-#BuildRequires: openssl-devel
-#Requires(pre): shadow-utils
-#%endif
-
 # end of distribution specific definitions
 
 %define base_version %%BASE_VERSION%%
@@ -141,11 +120,6 @@ Recommends: logrotate
 %description
 nginx [engine x] is an HTTP and reverse proxy server, as well as
 a mail proxy server.
-
-# Centmin Mod: SUSE debug_package disabled
-#%if ( 0%{?suse_version} && 0%{?suse_version} < 1600 )
-#%debug_package
-#%endif
 
 %prep
 %autosetup -n nginx-%{base_version} -p1
