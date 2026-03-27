@@ -179,7 +179,10 @@ echo "GCC version: $(gcc --version | head -1)"
 # code paths, but system openssl headers define incompatible macros
 # (e.g. sk_X509_NAME_find has different arity). Similar to Centmin Mod's
 # nginx-deps isolation approach.
+# Remove system OpenSSL headers to prevent conflicts with AWS-LC
 rpm -e --nodeps openssl-devel 2>/dev/null || true
+rm -rf /usr/include/openssl
+echo "Removed system openssl-devel headers"
 
 # Build AWS-LC from source (static linking)
 # Unset rpmbuild flags — AWS-LC has its own cmake-managed flags,
