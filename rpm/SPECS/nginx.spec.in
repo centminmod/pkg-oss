@@ -167,11 +167,13 @@ tar -C %{_builddir} -xzf %{SOURCE51}
 %endif
 
 %if "%{zlib_lib}" == "cloudflare"
-# Extract to parent dir and pre-run configure so "make distclean" target exists.
+# Extract to parent dir, rename to friendly version (shows in nginx -V),
+# and pre-run configure so "make distclean" target exists.
 # nginx's auto/lib/zlib/make runs "make distclean && ./configure && make libz.a"
 # but fresh CF zlib source has no Makefile yet, causing distclean to fail.
 tar -C %{_builddir} -xzf %{SOURCE60}
-cd %{_builddir}/zlib-%%CF_ZLIB_COMMIT%%
+mv %{_builddir}/zlib-%%CF_ZLIB_COMMIT%% %{_builddir}/zlib-cloudflare-%%CF_ZLIB_VERSION%%
+cd %{_builddir}/zlib-cloudflare-%%CF_ZLIB_VERSION%%
 ./configure
 cd %{bdir}
 %endif

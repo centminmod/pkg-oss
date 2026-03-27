@@ -80,12 +80,13 @@ ZLIB?=	system
 ifeq ($(ZLIB),cloudflare)
 include $(CONTRIB)/src/cf-zlib/version
 ZLIB_SOURCES=	zlib-$(CF_ZLIB_COMMIT).tar.gz
-ZLIB_CONFIGURE_ARGS=	--with-zlib=../zlib-$(CF_ZLIB_COMMIT) --with-zlib-opt=-fPIC
+ZLIB_CONFIGURE_ARGS=	--with-zlib=../zlib-cloudflare-$(CF_ZLIB_VERSION) --with-zlib-opt=-fPIC
 else
 ZLIB_SOURCES=
 ZLIB_CONFIGURE_ARGS=
 CF_ZLIB_COMMIT=
 CF_ZLIB_SHORT=
+CF_ZLIB_VERSION=
 endif
 
 BASE_CONFIGURE_ARGS=\
@@ -271,6 +272,7 @@ endif
 		-e "s#%%ZLIB_SOURCES%%#$$zlib_sources#g" \
 		-e 's#%%ZLIB_CONFIGURE_ARGS%%#$(ZLIB_CONFIGURE_ARGS)#g' \
 		-e 's#%%CF_ZLIB_COMMIT%%#$(CF_ZLIB_COMMIT)#g' \
+		-e 's#%%CF_ZLIB_VERSION%%#$(CF_ZLIB_VERSION)#g' \
 		> nginx$(BASE_SUFFIX).spec ; \
 	sed nginx$(BASE_SUFFIX).rpm-changelog \
 		-e 's#%%BASE_VERSION%%#$(BASE_VERSION)#g' \
@@ -380,6 +382,7 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e 's#%%ZLIB_NAME%%#$(ZLIB)#g' \
 		-e 's#%%ZLIB_CONFIGURE_ARGS%%#$(ZLIB_CONFIGURE_ARGS)#g' \
 		-e 's#%%CF_ZLIB_COMMIT%%#$(CF_ZLIB_COMMIT)#g' \
+		-e 's#%%CF_ZLIB_VERSION%%#$(CF_ZLIB_VERSION)#g' \
 		-e "s#%%COPYRIGHT_SOURCE%%#$${module_copyright}#g" \
 		-e "s#%%MODULE_SOURCES%%#$${sources}#g" \
 		-e "s#%%MODULE_PATCHES%%#$${patches}#g" \
