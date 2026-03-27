@@ -49,7 +49,9 @@ BuildRequires: openssl11-devel >= 1.1.1
 Epoch: %{epoch}
 Requires(pre): shadow-utils
 Requires: procps-ng
+%if "%{crypto_lib}" != "awslc"
 BuildRequires: openssl-devel >= 1.1.1
+%endif
 BuildRequires: gcc-toolset-14-gcc gcc-toolset-14-gcc-c++
 %define _debugsource_template %{nil}
 %endif
@@ -59,7 +61,9 @@ BuildRequires: gcc-toolset-14-gcc gcc-toolset-14-gcc-c++
 Epoch: %{epoch}
 Requires(pre): shadow-utils
 Requires: procps-ng
+%if "%{crypto_lib}" != "awslc"
 BuildRequires: openssl-devel
+%endif
 BuildRequires: gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
 %define _debugsource_template %{nil}
 %endif
@@ -69,7 +73,9 @@ BuildRequires: gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
 Epoch: %{epoch}
 Requires(pre): shadow-utils
 Requires: procps-ng
+%if "%{crypto_lib}" != "awslc"
 BuildRequires: openssl-devel
+%endif
 %define _debugsource_template %{nil}
 %endif
 
@@ -169,6 +175,9 @@ echo "GCC version: $(gcc --version | head -1)"
 
 %if "%{crypto_lib}" == "awslc"
 # Build AWS-LC from source (static linking)
+# Unset rpmbuild flags — AWS-LC has its own cmake-managed flags,
+# and jitterentropy requires -O0 which conflicts with FORTIFY_SOURCE
+unset CFLAGS CXXFLAGS LDFLAGS
 cd %{bdir}
 mkdir -p awslc-build && cd awslc-build
 %if 0%{?rhel} == 8
