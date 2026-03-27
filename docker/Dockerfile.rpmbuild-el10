@@ -24,4 +24,4 @@ RUN chown -R builder:builder /home/builder/rpmbuild /home/builder/contrib /home/
 USER builder
 WORKDIR /home/builder/rpmbuild
 
-CMD ["bash", "-c", "cd SPECS && make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs nginx.spec && rpmbuild --define '_topdir /home/builder/rpmbuild' -ba SPECS/nginx.spec && cp -r RPMS/* /output/ && cp -r SRPMS/* /output/ 2>/dev/null; echo 'Build complete. RPMs in /output/'"]
+CMD ["bash", "-c", "cd SPECS && make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs nginx.spec && rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && cp -r ../RPMS/* /output/ && cp -r ../SRPMS/* /output/ 2>/dev/null; echo 'Build complete. RPMs in /output/'"]
