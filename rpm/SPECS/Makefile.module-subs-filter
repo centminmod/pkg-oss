@@ -20,7 +20,7 @@ cat <<BANNER
 ----------------------------------------------------------------------
 
 The $(MODULE_SUMMARY_subs_filter) for $(MODULE_SUMMARY_PREFIX) has been installed.
-To enable this module, add the following to /etc/nginx/nginx.conf
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
 and reload nginx:
 
     load_module modules/ngx_http_subs_filter_module.so;

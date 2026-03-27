@@ -1,5 +1,14 @@
 #
-%define nginx_home %{_localstatedir}/cache/nginx
+# Centmin Mod path macros — NEVER redefine global RPM macros (%{_libdir} etc.)
+%global cm_prefix       /usr/local/nginx
+%global cm_sbindir      /usr/local/sbin
+%global cm_confdir      %{cm_prefix}/conf
+%global cm_logdir       %{cm_prefix}/logs
+%global cm_moduledir    %{cm_prefix}/modules
+%global cm_htmldir      %{cm_prefix}/html
+%global cm_cachedir     /var/cache/nginx
+
+%define nginx_home %{cm_cachedir}
 %define nginx_user nginx
 %define nginx_group nginx
 %define nginx_loggroup adm
@@ -59,46 +68,48 @@ BuildRequires: openssl-devel
 %define _debugsource_template %{nil}
 %endif
 
-%if 0%{?suse_version} >= 1315
-%define _group Productivity/Networking/Web/Servers
-%define nginx_loggroup trusted
-Requires(pre): shadow
-Requires: procps
-BuildRequires: libopenssl-devel
-%define _debugsource_template %{nil}
-%endif
+# Centmin Mod: SUSE support disabled (EL8/9/10 only)
+# Kept commented for upstream merge compatibility
+#%if 0%{?suse_version} >= 1315
+#%define _group Productivity/Networking/Web/Servers
+#%define nginx_loggroup trusted
+#Requires(pre): shadow
+#Requires: procps
+#BuildRequires: libopenssl-devel
+#%define _debugsource_template %{nil}
+#%endif
 
-# This also applies to Amazon Linux 2023
-%if 0%{?fedora}
-%define _debugsource_template %{nil}
-%global _hardened_build 1
-%define _group System Environment/Daemons
-Requires: procps-ng
-BuildRequires: openssl-devel
-Requires(pre): shadow-utils
-%endif
+# Centmin Mod: Fedora/Amazon Linux 2023 support disabled (EL8/9/10 only)
+#%if 0%{?fedora}
+#%define _debugsource_template %{nil}
+#%global _hardened_build 1
+#%define _group System Environment/Daemons
+#Requires: procps-ng
+#BuildRequires: openssl-devel
+#Requires(pre): shadow-utils
+#%endif
 
 # end of distribution specific definitions
 
 %define base_version %%BASE_VERSION%%
-%define base_release %%BASE_RELEASE%%%{?dist}.ngx
+%define base_release %%BASE_RELEASE%%%{?dist}.cmm
 
-%define bdir %{_builddir}/%{name}-%{base_version}
+%define bdir %{_builddir}/nginx-%{base_version}
 
 %define WITH_CC_OPT $(echo %{optflags} $(pcre2-config --cflags)) -fPIC
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -pie
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 
-Summary: High performance web server
-Name: nginx
+Summary: High performance web server (Centmin Mod)
+Name: centminmod-nginx
 Version: %{base_version}
 Release: %{base_release}
 Vendor: %%PACKAGE_VENDOR%%
-URL: https://nginx.org/
+URL: https://centminmod.com/
 Group: %{_group}
 
-Source0: https://nginx.org/download/%{name}-%{version}.tar.gz
+Source0: https://nginx.org/download/nginx-%{base_version}.tar.gz
 Source1: logrotate
 Source2: nginx.conf
 Source3: nginx.default.conf
@@ -118,7 +129,10 @@ BuildRequires: zlib-devel
 BuildRequires: pcre2-devel
 
 Provides: webserver
+Provides: nginx = %{base_version}-%{base_release}
 Provides: nginx-r%{base_version}
+Provides: centminmod-nginx-r%{base_version}
+Conflicts: nginx
 
 %if !(0%{?rhel} == 7)
 Recommends: logrotate
@@ -128,12 +142,13 @@ Recommends: logrotate
 nginx [engine x] is an HTTP and reverse proxy server, as well as
 a mail proxy server.
 
-%if ( 0%{?suse_version} && 0%{?suse_version} < 1600 )
-%debug_package
-%endif
+# Centmin Mod: SUSE debug_package disabled
+#%if ( 0%{?suse_version} && 0%{?suse_version} < 1600 )
+#%debug_package
+#%endif
 
 %prep
-%autosetup -p1
+%autosetup -n nginx-%{base_version} -p1
 
 %build
 ./configure %{BASE_CONFIGURE_ARGS} \
@@ -152,34 +167,37 @@ make %{?_smp_mflags}
 %{__rm} -rf $RPM_BUILD_ROOT
 %{__make} DESTDIR=$RPM_BUILD_ROOT INSTALLDIRS=vendor install
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_datadir}/nginx
-%{__mv} $RPM_BUILD_ROOT%{_sysconfdir}/nginx/html $RPM_BUILD_ROOT%{_datadir}/nginx/
+# With --prefix=/usr/local/nginx, make install puts html at cm_htmldir already
+# No need to move html — it's already at %{cm_htmldir}
 
-%{__rm} -f $RPM_BUILD_ROOT%{_sysconfdir}/nginx/*.default
-%{__rm} -f $RPM_BUILD_ROOT%{_sysconfdir}/nginx/fastcgi.conf
+# Remove .default config files and fastcgi.conf installed by make install
+%{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/*.default
+%{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/fastcgi.conf
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_localstatedir}/log/nginx
-%{__mkdir} -p $RPM_BUILD_ROOT%{_localstatedir}/run/nginx
-%{__mkdir} -p $RPM_BUILD_ROOT%{_localstatedir}/cache/nginx
+# Create cache directory (temp paths are under here)
+%{__mkdir} -p $RPM_BUILD_ROOT%{cm_cachedir}
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_libdir}/nginx/modules
-cd $RPM_BUILD_ROOT%{_sysconfdir}/nginx && \
-    %{__ln_s} ../..%{_libdir}/nginx/modules modules && cd -
+# Create modules directory (no symlink needed — modules-path is already under prefix)
+%{__mkdir} -p $RPM_BUILD_ROOT%{cm_moduledir}
 
+# Install documentation
 %{__mkdir} -p $RPM_BUILD_ROOT%{_datadir}/doc/%{name}-%{base_version}
 %{__install} -m 644 -p %{SOURCE8} \
     $RPM_BUILD_ROOT%{_datadir}/doc/%{name}-%{base_version}/COPYRIGHT
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_sysconfdir}/nginx/conf.d
-%{__rm} $RPM_BUILD_ROOT%{_sysconfdir}/nginx/nginx.conf
+# Install custom nginx.conf and default server config
+%{__mkdir} -p $RPM_BUILD_ROOT%{cm_confdir}/conf.d
+%{__rm} $RPM_BUILD_ROOT%{cm_confdir}/nginx.conf
 %{__install} -m 644 -p %{SOURCE2} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/nginx/nginx.conf
+    $RPM_BUILD_ROOT%{cm_confdir}/nginx.conf
 %{__install} -m 644 -p %{SOURCE3} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/nginx/conf.d/default.conf
+    $RPM_BUILD_ROOT%{cm_confdir}/conf.d/default.conf
 
+# Install man pages (system location)
 %{__install} -p -D -m 0644 %{bdir}/objs/nginx.8 \
     $RPM_BUILD_ROOT%{_mandir}/man8/nginx.8
 
+# Install systemd service files (system location)
 %{__mkdir} -p $RPM_BUILD_ROOT%{_unitdir}
 %{__install} -m644 %SOURCE4 \
     $RPM_BUILD_ROOT%{_unitdir}/nginx.service
@@ -191,31 +209,25 @@ cd $RPM_BUILD_ROOT%{_sysconfdir}/nginx && \
 %{__install} -m755 %SOURCE9 \
     $RPM_BUILD_ROOT%{_libexecdir}/initscripts/legacy-actions/nginx/check-reload
 
-# install log rotation stuff
+# Install logrotate configuration (system location, EL only — no SUSE)
 %{__mkdir} -p $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d
-%if 0%{?suse_version}
-%{__install} -m 644 -p %{SOURCE6} \
-    $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/nginx
-%else
 %{__install} -m 644 -p %{SOURCE1} \
     $RPM_BUILD_ROOT%{_sysconfdir}/logrotate.d/nginx
-%endif
 
+# Install debug binary
 %{__install} -m755 %{bdir}/objs/nginx-debug \
-    $RPM_BUILD_ROOT%{_sbindir}/nginx-debug
+    $RPM_BUILD_ROOT%{cm_sbindir}/nginx-debug
 
-%{__rm} $RPM_BUILD_ROOT%{_sysconfdir}/nginx/koi-utf
-%{__rm} $RPM_BUILD_ROOT%{_sysconfdir}/nginx/koi-win
-%{__rm} $RPM_BUILD_ROOT%{_sysconfdir}/nginx/win-utf
+# Remove charset conversion files (not needed by Centmin Mod)
+%{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/koi-utf
+%{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/koi-win
+%{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/win-utf
 
 %check
 %{__rm} -rf $RPM_BUILD_ROOT/usr/src
 cd %{bdir}
 grep -v 'usr/src' debugfiles.list > debugfiles.list.new && mv debugfiles.list.new debugfiles.list
 cat /dev/null > debugsources.list
-%if 0%{?suse_version} >= 1500
-cat /dev/null > debugsourcefiles.list
-%endif
 
 %clean
 %{__rm} -rf $RPM_BUILD_ROOT
@@ -223,19 +235,21 @@ cat /dev/null > debugsourcefiles.list
 %files
 %defattr(-,root,root)
 
-%{_sbindir}/nginx
-%{_sbindir}/nginx-debug
+%{cm_sbindir}/nginx
+%{cm_sbindir}/nginx-debug
 
-%dir %{_sysconfdir}/nginx
-%dir %{_sysconfdir}/nginx/conf.d
-%{_sysconfdir}/nginx/modules
+%dir %{cm_prefix}
+%dir %{cm_confdir}
+%dir %{cm_confdir}/conf.d
+%dir %{cm_moduledir}
+%dir %{cm_logdir}
 
-%config(noreplace) %{_sysconfdir}/nginx/nginx.conf
-%config(noreplace) %{_sysconfdir}/nginx/conf.d/default.conf
-%config(noreplace) %{_sysconfdir}/nginx/mime.types
-%config(noreplace) %{_sysconfdir}/nginx/fastcgi_params
-%config(noreplace) %{_sysconfdir}/nginx/scgi_params
-%config(noreplace) %{_sysconfdir}/nginx/uwsgi_params
+%config(noreplace) %{cm_confdir}/nginx.conf
+%config(noreplace) %{cm_confdir}/conf.d/default.conf
+%config(noreplace) %{cm_confdir}/mime.types
+%config(noreplace) %{cm_confdir}/fastcgi_params
+%config(noreplace) %{cm_confdir}/scgi_params
+%config(noreplace) %{cm_confdir}/uwsgi_params
 
 %config(noreplace) %{_sysconfdir}/logrotate.d/nginx
 %{_unitdir}/nginx.service
@@ -243,14 +257,10 @@ cat /dev/null > debugsourcefiles.list
 %dir %{_libexecdir}/initscripts/legacy-actions/nginx
 %{_libexecdir}/initscripts/legacy-actions/nginx/*
 
-%attr(0755,root,root) %dir %{_libdir}/nginx
-%attr(0755,root,root) %dir %{_libdir}/nginx/modules
-%dir %{_datadir}/nginx
-%dir %{_datadir}/nginx/html
-%{_datadir}/nginx/html/*
+%dir %{cm_htmldir}
+%{cm_htmldir}/*
 
-%attr(0755,root,root) %dir %{_localstatedir}/cache/nginx
-%attr(0755,root,root) %dir %{_localstatedir}/log/nginx
+%attr(0755,root,root) %dir %{cm_cachedir}
 
 %dir %{_datadir}/doc/%{name}-%{base_version}
 %doc %{_datadir}/doc/%{name}-%{base_version}/COPYRIGHT
@@ -273,36 +283,38 @@ if [ $1 -eq 1 ]; then
     cat <<BANNER
 ----------------------------------------------------------------------
 
-Thanks for using nginx!
+Thanks for using Centmin Mod nginx!
 
-Please find the official documentation for nginx here:
-* https://nginx.org/en/docs/
+Documentation: https://centminmod.com/
+Nginx docs:    https://nginx.org/en/docs/
 
-Please subscribe to nginx-announce mailing list to get
-the most important news about nginx:
-* https://nginx.org/en/support.html
-
-Commercial subscriptions for nginx are available on:
-* https://nginx.com/products/
+Config:  %{cm_confdir}/nginx.conf
+Binary:  %{cm_sbindir}/nginx
+Modules: %{cm_moduledir}/
+Logs:    %{cm_logdir}/
 
 ----------------------------------------------------------------------
 BANNER
 
-    # Touch and set permisions on default log files on installation
+    # Touch and set permissions on default log files on installation
 
-    if [ -d %{_localstatedir}/log/nginx ]; then
-        if [ ! -e %{_localstatedir}/log/nginx/access.log ]; then
-            touch %{_localstatedir}/log/nginx/access.log
-            %{__chmod} 640 %{_localstatedir}/log/nginx/access.log
-            %{__chown} nginx:%{nginx_loggroup} %{_localstatedir}/log/nginx/access.log
+    if [ -d %{cm_logdir} ]; then
+        if [ ! -e %{cm_logdir}/access.log ]; then
+            touch %{cm_logdir}/access.log
+            %{__chmod} 640 %{cm_logdir}/access.log
+            %{__chown} nginx:%{nginx_loggroup} %{cm_logdir}/access.log
         fi
 
-        if [ ! -e %{_localstatedir}/log/nginx/error.log ]; then
-            touch %{_localstatedir}/log/nginx/error.log
-            %{__chmod} 640 %{_localstatedir}/log/nginx/error.log
-            %{__chown} nginx:%{nginx_loggroup} %{_localstatedir}/log/nginx/error.log
+        if [ ! -e %{cm_logdir}/error.log ]; then
+            touch %{cm_logdir}/error.log
+            %{__chmod} 640 %{cm_logdir}/error.log
+            %{__chown} nginx:%{nginx_loggroup} %{cm_logdir}/error.log
         fi
     fi
+
+    # SELinux: restore file contexts for /usr/local paths
+    restorecon -R %{cm_prefix} 2>/dev/null || true
+    restorecon -R %{cm_sbindir}/nginx* 2>/dev/null || true
 fi
 
 %preun
@@ -315,11 +327,7 @@ fi
 /usr/bin/systemctl daemon-reload >/dev/null 2>&1 ||:
 if [ $1 -ge 1 ]; then
     /sbin/service nginx status  >/dev/null 2>&1 || exit 0
-%if 0%{?suse_version} >= 1600
-    %{_libexecdir}/initscripts/legacy-actions/nginx/upgrade >/dev/null 2>&1 || echo \
-%else
     /sbin/service nginx upgrade >/dev/null 2>&1 || echo \
-%endif
         "Binary upgrade failed, please check nginx's error.log"
 fi
 

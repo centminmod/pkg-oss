@@ -43,7 +43,7 @@ MODULE_SPEC_TEMPLATE=	nginx$(MODULE_SUFFIX)-module.spec.in
 MODULE_PACKAGE_PREFIX=nginx$(MODULE_SUFFIX)-module
 MODULE_TARGET_PREFIX=$(TARGET_VERSION)+
 
-PACKAGE_VENDOR=	NGINX Packaging <nginx-packaging@f5.com>
+PACKAGE_VENDOR=	Centmin Mod <centminmod@centminmod.com>
 
 BASE_MODULES=	acme geoip image-filter njs otel perl xslt
 
@@ -52,19 +52,19 @@ MODULES=
 -include Makefile.module-*
 
 BASE_CONFIGURE_ARGS=\
-	--prefix=%{_sysconfdir}/nginx \
-	--sbin-path=%{_sbindir}/nginx \
-	--modules-path=%{_libdir}/nginx/modules \
-	--conf-path=%{_sysconfdir}/nginx/nginx.conf \
-	--error-log-path=%{_localstatedir}/log/nginx/error.log \
-	--http-log-path=%{_localstatedir}/log/nginx/access.log \
-	--pid-path=%{_localstatedir}/run/nginx.pid \
-	--lock-path=%{_localstatedir}/run/nginx.lock \
-	--http-client-body-temp-path=%{_localstatedir}/cache/nginx/client_temp \
-	--http-proxy-temp-path=%{_localstatedir}/cache/nginx/proxy_temp \
-	--http-fastcgi-temp-path=%{_localstatedir}/cache/nginx/fastcgi_temp \
-	--http-uwsgi-temp-path=%{_localstatedir}/cache/nginx/uwsgi_temp \
-	--http-scgi-temp-path=%{_localstatedir}/cache/nginx/scgi_temp \
+	--prefix=/usr/local/nginx \
+	--sbin-path=/usr/local/sbin/nginx \
+	--modules-path=/usr/local/nginx/modules \
+	--conf-path=/usr/local/nginx/conf/nginx.conf \
+	--error-log-path=/usr/local/nginx/logs/error.log \
+	--http-log-path=/usr/local/nginx/logs/access.log \
+	--pid-path=/usr/local/nginx/logs/nginx.pid \
+	--lock-path=/var/run/nginx.lock \
+	--http-client-body-temp-path=/var/cache/nginx/client_temp \
+	--http-proxy-temp-path=/var/cache/nginx/proxy_temp \
+	--http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp \
+	--http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp \
+	--http-scgi-temp-path=/var/cache/nginx/scgi_temp \
 	--user=%{nginx_user} \
 	--group=%{nginx_group} \
 	--with-compat \

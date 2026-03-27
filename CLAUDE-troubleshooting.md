@@ -174,3 +174,27 @@ sudo dpkg -i sysbox-ce_0.6.7-0.linux_amd64.deb
 **Symptom**: Dockerfile changes not picked up in CI.
 
 **Fix**: Use `docker/build-push-action@v6` with explicit `no-cache: true` or invalidate layers.
+
+### Renaming RPM Package Breaks Source0, autosetup, and bdir
+
+**Symptom**: `rpmbuild -ba nginx.spec` fails with "Bad exit status from .../prep" or source tarball not found after changing `Name: nginx` to `Name: centminmod-nginx`.
+
+**Cause**: Three locations in nginx.spec.in use `%{name}` which expands to the new package name:
+- `Source0: %{name}-%{version}.tar.gz` → tries to download `centminmod-nginx-1.29.7.tar.gz` (doesn't exist)
+- `%autosetup -p1` → looks for directory `centminmod-nginx-1.29.7/` (tarball has `nginx-1.29.7/`)
+- `%define bdir %{_builddir}/%{name}-%{base_version}` → wrong build directory path
+
+**Fix**: Hardcode `nginx` in all three:
+```spec
+Source0: https://nginx.org/download/nginx-%{base_version}.tar.gz
+%autosetup -n nginx-%{base_version} -p1
+%define bdir %{_builddir}/nginx-%{base_version}
+```
+
+### Modules Symlink Unnecessary with Custom Prefix
+
+**Symptom**: Broken symlink at `/usr/local/nginx/conf/modules` after Phase 1 path changes.
+
+**Cause**: Upstream creates a symlink from `%{_sysconfdir}/nginx/modules → %{_libdir}/nginx/modules` because modules-path and prefix are in different directory trees. With `--prefix=/usr/local/nginx` and `--modules-path=/usr/local/nginx/modules`, the modules dir is already under the prefix.
+
+**Fix**: Remove the symlink creation entirely. Just `%{__mkdir} -p $RPM_BUILD_ROOT%{cm_moduledir}`.

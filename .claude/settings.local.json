@@ -95,7 +95,11 @@
       "WebFetch(domain:developers.cloudflare.com)",
       "Bash(zsh -i -c 'codex -p readonly exec \"$\\(cat .claude/skills/consult-codex/tmp/codex-prompt.txt\\)\" --json 2>&1')",
       "Bash(jq -Rr \"sub\\(\"\"^[^{]*\"\";\"\"\"\"\\) | fromjson? | select\\(.type==\"\"item.completed\"\" and .item.type?==\"\"agent_message\"\"\\) | .item.text // empty\" /private/tmp/claude-501/-Volumes-AMZ3-AI-vibe-coding-pkg-oss/03222631-d48a-4d90-8d1a-6b0e0f0491b9/tasks/b22y1svk1.output)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(zsh -i -c 'codex -p readonly exec \"$\\(cat /Volumes/AMZ3/AI-vibe-coding/pkg-oss/.claude/skills/consult-codex/tmp/codex-prompt.txt\\)\" --json 2>&1')",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git check-ignore:*)"
     ],
     "deny": []
   }

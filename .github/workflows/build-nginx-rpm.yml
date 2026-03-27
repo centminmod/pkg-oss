@@ -1,0 +1,50 @@
+name: Build Centmin Mod Nginx RPM
+
+on:
+  workflow_dispatch:
+    inputs:
+      el_versions:
+        description: 'EL versions to build'
+        required: true
+        default: 'el9'
+        type: choice
+        options:
+          - el10
+          - el9
+          - el8
+          - el9-el10
+          - el8-el9-el10
+
+jobs:
+  build:
+    name: Build RPM (EL${{ matrix.el_version }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        el_version: ${{ fromJSON(
+          inputs.el_versions == 'el8' && '["8"]' ||
+          inputs.el_versions == 'el9' && '["9"]' ||
+          inputs.el_versions == 'el10' && '["10"]' ||
+          inputs.el_versions == 'el9-el10' && '["9","10"]' ||
+          inputs.el_versions == 'el8-el9-el10' && '["8","9","10"]' ||
+          '["9"]'
+          ) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile.rpmbuild-el${{ matrix.el_version }} -t rpmbuild:el${{ matrix.el_version }} .
+
+      - name: Build RPMs
+        run: mkdir -p output && docker run --rm -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
+
+      - name: List built RPMs
+        run: ls -la output/
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-rpms-el${{ matrix.el_version }}
+          path: output/*.rpm

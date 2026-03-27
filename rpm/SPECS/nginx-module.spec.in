@@ -2,6 +2,14 @@
 %define nginx_user nginx
 %define nginx_group nginx
 
+%global cm_prefix       /usr/local/nginx
+%global cm_sbindir      /usr/local/sbin
+%global cm_confdir      %{cm_prefix}/conf
+%global cm_logdir       %{cm_prefix}/logs
+%global cm_moduledir    %{cm_prefix}/modules
+%global cm_htmldir      %{cm_prefix}/html
+%global cm_cachedir     /var/cache/nginx
+
 %define __arch_install_post   /usr/lib/rpm/check-rpaths   /usr/lib/rpm/check-buildroot
 
 %if 0%{?rhel} || 0%{?amzn} || 0%{?fedora}
@@ -13,11 +21,12 @@ BuildRequires: openssl-devel
 %endif
 %endif
 
-%if 0%{?suse_version} >= 1315
-%define _group Productivity/Networking/Web/Servers
-BuildRequires: libopenssl-devel
-%define _debugsource_template %{nil}
-%endif
+# Centmin Mod: SUSE not supported, commented out
+#%if 0%{?suse_version} >= 1315
+#%define _group Productivity/Networking/Web/Servers
+#BuildRequires: libopenssl-devel
+#%define _debugsource_template %{nil}
+#%endif
 
 %if (0%{?rhel} == 7) && (0%{?amzn} == 0)
 %define epoch 1
@@ -85,9 +94,10 @@ Provides: %{name}-r%{base_version}
 %description
 nginx %%SHORT_SUMMARY%%.
 
-%if ( 0%{?suse_version} && 0%{?suse_version} < 1600 )
-%debug_package
-%endif
+# Centmin Mod: SUSE not supported, commented out
+#%if ( 0%{?suse_version} && 0%{?suse_version} < 1600 )
+#%debug_package
+#%endif
 
 %define WITH_CC_OPT $(echo %{optflags} $(pcre2-config --cflags))
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,-as-needed
@@ -132,10 +142,10 @@ cd %{bdir}
 
 %%MODULE_PREINSTALL%%
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_libdir}/nginx/modules
+%{__mkdir} -p $RPM_BUILD_ROOT%{cm_moduledir}
 for so in `find %{bdir}/objs/ -maxdepth 1 -type f -name "*.so"`; do
 %{__install} -m755 $so \
-   $RPM_BUILD_ROOT%{_libdir}/nginx/modules/
+   $RPM_BUILD_ROOT%{cm_moduledir}/
 done
 
 %check
@@ -143,16 +153,17 @@ done
 cd %{bdir}
 grep -v 'usr/src' debugfiles.list > debugfiles.list.new && mv debugfiles.list.new debugfiles.list
 cat /dev/null > debugsources.list
-%if 0%{?suse_version} >= 1500
-cat /dev/null > debugsourcefiles.list
-%endif
+# Centmin Mod: SUSE not supported, commented out
+#%if 0%{?suse_version} >= 1500
+#cat /dev/null > debugsourcefiles.list
+#%endif
 
 %clean
 %{__rm} -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root)
-%{_libdir}/nginx/modules/*
+%{cm_moduledir}/*
 %dir %{_datadir}/doc/%%NAME%%
 %{_datadir}/doc/%%NAME%%/*
 %%MODULE_FILES%%

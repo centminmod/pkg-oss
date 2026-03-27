@@ -8,7 +8,7 @@ CHECKSLEEP=3
 
 templog=`/bin/mktemp --tmpdir nginx-check-reload-XXXXXX.log`
 trap '/bin/rm -f $templog' 0
-/usr/bin/tail --pid=$$ -n 0 --follow=name /var/log/nginx/error.log > $templog &
+/usr/bin/tail --pid=$$ -n 0 --follow=name /usr/local/nginx/logs/error.log > $templog &
 /bin/sleep 1
 /bin/echo -n $"Sending reload signal to $prog: "
 pkill -F ${pidfile} ${prog} --signal HUP
