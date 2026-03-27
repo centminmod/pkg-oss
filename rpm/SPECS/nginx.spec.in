@@ -162,13 +162,13 @@ tar xzf %{SOURCE50}
 %endif
 
 %if "%{crypto_lib}" == "openssl"
-# Extract custom OpenSSL source for --with-openssl= inline build
-tar xzf %{SOURCE51}
+# Extract to parent dir — --with-openssl=../openssl-X.Y.Z is relative to nginx source
+tar -C %{_builddir} -xzf %{SOURCE51}
 %endif
 
 %if "%{zlib_lib}" == "cloudflare"
-# Extract Cloudflare zlib source for --with-zlib= inline build
-tar xzf %{SOURCE60}
+# Extract to parent dir — --with-zlib=../zlib-XXX is relative to nginx source
+tar -C %{_builddir} -xzf %{SOURCE60}
 %endif
 
 %build
