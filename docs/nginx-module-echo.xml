@@ -1,0 +1,20 @@
+<?xml version="1.0" ?>
+<!DOCTYPE change_log SYSTEM "changes.dtd" >
+
+
+<change_log title="nginx_module_echo">
+
+
+<changes apply="nginx-module-echo" ver="0.64" rev="1" basever="1.29.7"
+         date="2026-03-28" time="00:00:00 +0000"
+         packager="Centmin Mod &lt;centminmod@centminmod.com&gt;">
+<change>
+<para>
+Initial release of echo module package for Centmin Mod.
+</para>
+</change>
+
+</changes>
+
+
+</change_log>
