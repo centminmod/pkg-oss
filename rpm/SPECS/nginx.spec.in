@@ -1,4 +1,7 @@
 #
+# Crypto library selection (set by Makefile CRYPTO variable)
+%define crypto_lib %%CRYPTO_NAME%%
+
 # Centmin Mod path macros — NEVER redefine global RPM macros (%{_libdir} etc.)
 %global cm_prefix       /usr/local/nginx
 %global cm_sbindir      /usr/local/sbin
@@ -72,9 +75,6 @@ BuildRequires: openssl-devel
 
 # end of distribution specific definitions
 
-# Crypto library build dependencies (when not using system OpenSSL)
-%%CRYPTO_BUILDREQUIRES%%
-
 %define base_version %%BASE_VERSION%%
 %define base_release %%BASE_RELEASE%%%{?dist}.cmm
 
@@ -122,6 +122,16 @@ BuildRoot: %{_tmppath}/%{name}-%{base_version}-%{base_release}-root
 BuildRequires: zlib-devel
 BuildRequires: pcre2-devel
 
+%if "%{crypto_lib}" == "awslc"
+%if 0%{?rhel} == 8
+BuildRequires: cmake3
+%else
+BuildRequires: cmake
+%endif
+BuildRequires: ninja-build
+BuildRequires: golang
+%endif
+
 Provides: webserver
 Provides: nginx = %{base_version}-%{base_release}
 Provides: nginx-r%{base_version}
@@ -140,7 +150,12 @@ a mail proxy server.
 %prep
 %setup -q -n nginx-%{base_version}
 %%BASE_PREP_PATCHES%%
-%%CRYPTO_PREP%%
+
+%if "%{crypto_lib}" == "awslc"
+# Extract AWS-LC source and apply nginx compatibility patches
+tar xzf %{SOURCE50}
+%patch -P050 -p1
+%endif
 
 %build
 # Activate GCC toolset for enhanced compiler optimizations
@@ -151,7 +166,29 @@ a mail proxy server.
 . /opt/rh/gcc-toolset-15/enable
 %endif
 echo "GCC version: $(gcc --version | head -1)"
-%%CRYPTO_PREBUILD%%
+
+%if "%{crypto_lib}" == "awslc"
+# Build AWS-LC from source (static linking)
+cd %{bdir}
+mkdir -p awslc-build && cd awslc-build
+%if 0%{?rhel} == 8
+cmake3 \
+%else
+cmake \
+%endif
+  -GNinja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DBUILD_TESTING=OFF \
+  -DCMAKE_INSTALL_PREFIX=%{bdir}/awslc-install \
+  ../aws-lc-%%AWSLC_VERSION%%
+ninja-build -j$(nproc)
+ninja-build install
+cd %{bdir}
+echo "AWS-LC built and installed to %{bdir}/awslc-install"
+%endif
+
 ./configure %{BASE_CONFIGURE_ARGS} %%CRYPTO_CONFIGURE_ARGS%% \
     --with-cc-opt="%{WITH_CC_OPT}" \
     --with-ld-opt="%{WITH_LD_OPT}" \

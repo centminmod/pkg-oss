@@ -66,6 +66,7 @@ else
 CRYPTO_PACKAGE_SUFFIX=
 CRYPTO_SOURCES=
 CRYPTO_CONFIGURE_ARGS=
+AWSLC_VERSION=
 endif
 
 BASE_CONFIGURE_ARGS=\
@@ -196,9 +197,6 @@ endif
 			awk '{ printf "%%patch -P%03d -p1\\\n", NR }'`; \
 	crypto_sources="" ; \
 	crypto_patches="" ; \
-	crypto_prep="" ; \
-	crypto_prebuild="" ; \
-	crypto_br="" ; \
 	crypto_name="system" ; \
 	if [ "$(CRYPTO)" = "awslc" ]; then \
 		crypto_name="awslc" ; \
@@ -209,16 +207,12 @@ endif
 			i=$$(($${i}+1)) ; \
 		done ; \
 		j=50 ; \
-		awslc_patch_files=`find $(CONTRIB)/src/awslc/ \
-			-type f -name '*.patch' -printf "%f\n" | sort`; \
-		for p in $$awslc_patch_files; do \
-			cp -v $(CONTRIB)/src/awslc/$$p $(SRCPATH) ; \
-			crypto_patches="$${crypto_patches}Patch0$${j}: $$p\n" ; \
+		for p in `ls $(CONTRIB)/src/awslc/*.patch 2>/dev/null | sort`; do \
+			pn=`basename $$p` ; \
+			cp -v $$p $(SRCPATH) ; \
+			crypto_patches="$${crypto_patches}Patch0$${j}: $${pn}\n" ; \
 			j=$$(($${j}+1)) ; \
 		done ; \
-		crypto_prep="tar xzf %{SOURCE50}\n%patch -P050 -p1" ; \
-		crypto_prebuild="cd %{bdir}\nmkdir -p awslc-build \&\& cd awslc-build\n%if 0%{?rhel} == 8\ncmake3 \\\\\\\n%else\ncmake \\\\\\\n%endif\n  -GNinja \\\\\\\n  -DCMAKE_BUILD_TYPE=Release \\\\\\\n  -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE \\\\\\\n  -DBUILD_SHARED_LIBS=OFF \\\\\\\n  -DBUILD_TESTING=OFF \\\\\\\n  -DCMAKE_INSTALL_PREFIX=%{bdir}/awslc-install \\\\\\\n  ../aws-lc-$(AWSLC_VERSION)\nninja-build -j$$(nproc)\nninja-build install\ncd %{bdir}" ; \
-		crypto_br="%if 0%{?rhel} == 8\nBuildRequires: cmake3\n%else\nBuildRequires: cmake\n%endif\nBuildRequires: ninja-build\nBuildRequires: golang" ; \
 	fi ; \
 	sed nginx$(BASE_SUFFIX).spec.in \
 		-e 's#%%PACKAGE_VENDOR%%#$(PACKAGE_VENDOR)#g' \
@@ -233,10 +227,8 @@ endif
 		-e "s#%%CRYPTO_NAME%%#$$crypto_name#g" \
 		-e "s#%%CRYPTO_SOURCES%%#$$crypto_sources#g" \
 		-e "s#%%CRYPTO_PATCHES%%#$$crypto_patches#g" \
-		-e "s#%%CRYPTO_PREP%%#$$crypto_prep#g" \
-		-e "s#%%CRYPTO_PREBUILD%%#$$crypto_prebuild#g" \
-		-e "s#%%CRYPTO_BUILDREQUIRES%%#$$crypto_br#g" \
 		-e 's#%%CRYPTO_CONFIGURE_ARGS%%#$(CRYPTO_CONFIGURE_ARGS)#g' \
+		-e 's#%%AWSLC_VERSION%%#$(AWSLC_VERSION)#g' \
 		> nginx$(BASE_SUFFIX).spec ; \
 	sed nginx$(BASE_SUFFIX).rpm-changelog \
 		-e 's#%%BASE_VERSION%%#$(BASE_VERSION)#g' \
