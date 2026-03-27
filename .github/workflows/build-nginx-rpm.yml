@@ -55,7 +55,7 @@ jobs:
             rpm -qip "$rpm"
             echo ""
             echo ":: rpm -qlp (file list) ::"
-            rpm -qlp "$rpm" | head -50
+            rpm -qlp "$rpm"
             echo ""
             echo ":: rpm -qp --provides ::"
             rpm -qp --provides "$rpm"
