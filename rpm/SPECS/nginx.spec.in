@@ -199,7 +199,7 @@ echo "AWS-LC built and installed to %{bdir}/awslc-install"
 %endif
 
 %if "%{crypto_lib}" == "awslc"
-%define CRYPTO_CC_OPT -I%{bdir}/awslc-install/include
+%define CRYPTO_CC_OPT -isystem %{bdir}/awslc-install/include
 %define CRYPTO_LD_OPT -L%{bdir}/awslc-install/lib64 -lssl -lcrypto -lpthread -ldl
 %else
 %define CRYPTO_CC_OPT %{nil}
