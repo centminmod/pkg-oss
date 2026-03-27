@@ -6,8 +6,19 @@
 
 * Forked nginx/pkg-oss to centminmod/pkg-oss (branch: `centminmod`)
 * Repository cloned to `/Volumes/AMZ3/AI-vibe-coding/pkg-oss/`
-* **Phase 1 COMPLETE** — Foundation paths, package identity, minimal working RPM infrastructure
+* **Phase 1 COMPLETE + CI VALIDATED** — Foundation paths, package identity, --build flag, RPM builds verified across EL8/9/10
 * Nginx version: 1.29.7, NJS version: 0.9.6
+* CI workflow: `.github/workflows/build-nginx-rpm.yml` — manual trigger, Docker rpmbuild, RPM verification steps
+
+### CI Validation Results (2026-03-27)
+
+* **EL8**: GCC 8.5.0, OpenSSL 1.1.1k FIPS, x86-64, FORTIFY_SOURCE=2
+* **EL9**: GCC 11.5.0, OpenSSL 3.5.1, x86-64-v2, FORTIFY_SOURCE=2
+* **EL10**: GCC 14.3.1, OpenSSL 3.5.1, x86-64-v3, FORTIFY_SOURCE=3
+* All platforms: nginx -V shows `--build=DATE-OS-rpm`, nginx -t passes, all CM paths confirmed
+* RPM verification: rpm -qip, -qlp, --provides, --requires, --conflicts, path validation
+* 7 CI issues found and fixed during validation (see CLAUDE-troubleshooting.md)
+* Run: https://github.com/centminmod/pkg-oss/actions/runs/23647266653
 
 ### Completed Work
 

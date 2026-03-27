@@ -191,6 +191,33 @@ Source0: https://nginx.org/download/nginx-%{base_version}.tar.gz
 %define bdir %{_builddir}/nginx-%{base_version}
 ```
 
+### RPM Comments Don't Suppress Macro Expansion
+
+**Symptom**: `error: line 166: %package debuginfo: package centminmod-nginx-debuginfo already exists`
+
+**Cause**: Lines like `#%debug_package` or `#%define _debugsource_template %{nil}` are expanded by rpmbuild even though they're "commented out" with `#`. RPM's `#` only suppresses the directive — macros inside are still expanded. `#%debug_package` creates a debuginfo subpackage, conflicting with the auto-generated one.
+
+**Fix**: Delete commented-out macro lines entirely. Never comment out RPM macros — remove them or wrap in `%if 0`.
+
+### Docker Volume Permission Denied for RPM Output
+
+**Symptom**: `cp: cannot create regular file '/output/foo.rpm': Permission denied` when copying built RPMs to Docker volume mount.
+
+**Cause**: `mkdir -p output` on the host creates the directory owned by `runner`. The Docker container runs as `builder` (non-root) and can't write to it.
+
+**Fix**: `chmod 777 output` before `docker run`:
+```yaml
+run: mkdir -p output && chmod 777 output && docker run --rm -v ${{ github.workspace }}/output:/output ...
+```
+
+### Docker Build Missing docs/ Directory
+
+**Symptom**: `cd: ../../docs: No such file or directory` during `make nginx.spec`.
+
+**Cause**: The Makefile's `nginx.rpm-changelog` target runs `cd $(DOCS)` where `DOCS?= ../../docs` is relative to the original repo layout. Dockerfiles that only copy `rpm/SPECS/` and `contrib/` are missing `docs/`.
+
+**Fix**: Add `COPY docs/ /home/builder/docs/` to Dockerfile and pass `DOCS=/home/builder/docs` to make.
+
 ### Modules Symlink Unnecessary with Custom Prefix
 
 **Symptom**: Broken symlink at `/usr/local/nginx/conf/modules` after Phase 1 path changes.
