@@ -25,10 +25,13 @@ USER builder
 WORKDIR /home/builder/rpmbuild
 
 CMD ["bash", "-ce", "\
+BUILD_DATE=$(date +%d%m%y-%H%M%S) && \
+BUILD_OS=almalinux$(rpm -E %{rhel}) && \
+BUILD_INFO=${BUILD_DATE}-${BUILD_OS}-rpm && \
 cd /home/builder/contrib && make .sum-nginx && \
 ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOURCES/ && \
 cd /home/builder/rpmbuild/SPECS && \
-make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs nginx.spec && \
+make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} nginx.spec && \
 rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && \
 find ../RPMS ../SRPMS -name '*.rpm' -exec cp -v {} /output/ \\; && \
 echo 'Build complete. RPMs:' && ls -lh /output/"]

@@ -51,7 +51,10 @@ MODULES=
 
 -include Makefile.module-*
 
+BUILD_INFO?=	centminmod
+
 BASE_CONFIGURE_ARGS=\
+	--build=$(BUILD_INFO) \
 	--prefix=/usr/local/nginx \
 	--sbin-path=/usr/local/sbin/nginx \
 	--modules-path=/usr/local/nginx/modules \
