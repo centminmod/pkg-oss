@@ -174,6 +174,13 @@ tar xzf %{SOURCE50}
 echo "GCC version: $(gcc --version | head -1)"
 
 %if "%{crypto_lib}" == "awslc"
+# Remove system openssl-devel headers to prevent header conflicts.
+# AWS-LC defines OPENSSL_IS_AWSLC which triggers BoringSSL-compatible
+# code paths, but system openssl headers define incompatible macros
+# (e.g. sk_X509_NAME_find has different arity). Similar to Centmin Mod's
+# nginx-deps isolation approach.
+rpm -e --nodeps openssl-devel 2>/dev/null || true
+
 # Build AWS-LC from source (static linking)
 # Unset rpmbuild flags — AWS-LC has its own cmake-managed flags,
 # and jitterentropy requires -O0 which conflicts with FORTIFY_SOURCE
