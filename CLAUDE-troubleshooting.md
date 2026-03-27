@@ -1,0 +1,176 @@
+# Troubleshooting Guide
+
+## Build System Issues
+
+### rpmbuild Fails with Missing BuildRequires
+
+**Symptom**: `rpmbuild -ba nginx.spec` fails with unresolved dependencies.
+
+**Fix**: Install build dependencies first:
+
+```bash
+# Generate spec, then install deps
+cd rpm/SPECS && make nginx.spec
+dnf -y builddep ./nginx.spec
+```
+
+### Spec Generation Fails — "No such file" for Patches
+
+**Symptom**: `make nginx.spec` fails because patch files in `contrib/src/` are missing.
+
+**Fix**: Ensure contrib sources are fetched:
+
+```bash
+cd contrib && make fetch
+```
+
+### Module Spec Won't Generate
+
+**Symptom**: `make nginx-module-<name>.spec` produces empty or error output.
+
+**Check**: Ensure `Makefile.module-<name>` exists in `rpm/SPECS/` and defines all required `MODULE_*_<NAME>` variables.
+
+### RHEL 7 Build Fails with HTTP/3
+
+**Symptom**: Build error related to `--with-http_v3_module` on RHEL 7 / CentOS 7.
+
+**Cause**: HTTP/3 requires OpenSSL >= 1.1.1 with QUIC support. RHEL 7 ships OpenSSL 1.0.2.
+
+**Fix**: The upstream spec conditionally excludes HTTP/3 for RHEL 7. Ensure the conditional is present:
+
+```spec
+%if 0%{?rhel} >= 8
+--with-http_v3_module
+%endif
+```
+
+### EL10 Container Fails to Start systemd
+
+**Symptom**: Docker container for AlmaLinux 10 hangs or systemd doesn't initialize.
+
+**Fix**: EL10 requires additional Docker flags:
+
+```bash
+docker run --cgroupns host -d \
+  --privileged \
+  --runtime=sysbox-runc \
+  --cap-add=SYS_ADMIN \
+  --cap-add=SYS_RESOURCE \
+  --tmpfs /run \
+  --tmpfs /run/lock \
+  -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
+  almalinux/10-init:latest
+```
+
+Also add to journald.conf: `Storage=volatile`
+
+### Never Redefine Global RPM Macros for Custom Paths
+
+**Mistake**: Redefining `%{_libdir}`, `%{_sysconfdir}`, `%{_sbindir}` at the top of the spec to change installation paths.
+
+**Symptom**: debuginfo package generation fails or produces corrupt debuginfo RPMs. Other RPM machinery (dependency generators, file triggers) may also break.
+
+**Fix**: Use custom named macros instead:
+```spec
+%global cm_prefix       /usr/local/nginx
+%global cm_confdir      %{cm_prefix}/conf
+%global cm_sbindir      %{cm_prefix}/sbin
+%global cm_moduledir    %{cm_prefix}/modules
+```
+
+Keep system macros for files at standard locations (systemd units, man pages, logrotate).
+
+### Broken Symlink After Changing Module Path
+
+**Symptom**: `/usr/local/nginx/conf/modules` symlink points to nonexistent target after path changes.
+
+**Cause**: `nginx.spec.in` lines 166-167 construct relative symlink via string concatenation (`../..` + `%{_libdir}`). When paths change, the arithmetic breaks silently.
+
+**Fix**: Use absolute path in the symlink or recalculate the relative path:
+```spec
+%{__ln_s} %{cm_moduledir} $RPM_BUILD_ROOT%{cm_confdir}/modules
+```
+
+### SELinux Labeling Under /usr/local
+
+**Symptom**: nginx fails to read configs, load modules, or write logs after RPM install on SELinux-enforcing systems.
+
+**Cause**: `/usr/local` paths may have wrong SELinux context labels.
+
+**Fix**: Add `restorecon -R /usr/local/nginx` to `%post` script, or ship a custom SELinux policy module.
+
+### gcc-toolset-15 Not Available on EL8
+
+**Symptom**: `dnf install gcc-toolset-15-gcc` fails on AlmaLinux/RHEL 8.
+
+**Cause**: gcc-toolset-15 is only available on RHEL/AlmaLinux 9.7+ and 10.1+. Not backported to EL8.
+
+**Fix**: Use gcc-toolset-14 (GCC 14.2.1) on EL8 — that's the latest available.
+
+```bash
+# EL8: use gcc-toolset-14
+dnf -y install gcc-toolset-14-gcc gcc-toolset-14-gcc-c++
+. /opt/rh/gcc-toolset-14/enable
+
+# EL9: use gcc-toolset-15
+dnf -y install gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
+. /opt/rh/gcc-toolset-15/enable
+```
+
+### EL10 System GCC Is Already 14.x — gcc-toolset-14 Is Redundant
+
+**Symptom**: Installing gcc-toolset-14 on EL10 has no practical benefit.
+
+**Cause**: RHEL/AlmaLinux 10's system GCC is already version 14.x. gcc-toolset-14 provides the same GCC version.
+
+**Fix**: On EL10, either use system GCC directly (no toolset needed) or install gcc-toolset-15 for GCC 15.1.1:
+
+```bash
+# Option 1: Use system GCC 14 (recommended — simpler)
+gcc -v  # Already shows GCC 14.x
+
+# Option 2: Use gcc-toolset-15 for GCC 15.1.1
+dnf -y install gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
+. /opt/rh/gcc-toolset-15/enable
+```
+
+**Reference**: [GCC and gcc-toolset versions in RHEL](https://developers.redhat.com/articles/2025/04/16/gcc-and-gcc-toolset-versions-rhel-explainer)
+
+## Common Pitfalls
+
+### Editing .spec Instead of .spec.in
+
+**Mistake**: Modifying `nginx.spec` directly — changes are overwritten by `make nginx.spec`.
+
+**Correct**: Always edit `nginx.spec.in` (the template) or the Makefile variables that generate the spec.
+
+### Forgetting to Update Module Version in Both Places
+
+**Mistake**: Updating module version in `Makefile.module-*` but not in `contrib/src/<module>/version`.
+
+**Check**: Version files in `contrib/src/` and `MODULE_VERSION_*` in Makefiles must match.
+
+### Patch Numbering Conflicts
+
+**Symptom**: Patches fail to apply with "already applied" or "offset" errors.
+
+**Cause**: Patch numbers are auto-generated. Adding patches to `contrib/src/` changes the numbering.
+
+**Fix**: Run `make clean && make nginx.spec` to regenerate with correct numbering.
+
+## CI/CD Issues
+
+### Sysbox Installation Fails on GitHub Runner
+
+**Fix**: Pin Sysbox version and ensure dpkg installation:
+
+```bash
+curl -LO https://downloads.nestybox.com/sysbox/releases/v0.6.7/sysbox-ce_0.6.7-0.linux_amd64.deb
+sudo dpkg -i sysbox-ce_0.6.7-0.linux_amd64.deb
+```
+
+### Docker Build Cache Issues
+
+**Symptom**: Dockerfile changes not picked up in CI.
+
+**Fix**: Use `docker/build-push-action@v6` with explicit `no-cache: true` or invalidate layers.
