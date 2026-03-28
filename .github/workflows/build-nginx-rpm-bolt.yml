@@ -126,15 +126,17 @@ jobs:
             -v ${{ github.workspace }}/profiles:/profiles \
             ${{ env.TOOLS_IMAGE }} bash -ce '
               echo "=== DEBUG: Container environment ==="
-              cat /etc/os-release | head -3
+              cat /etc/os-release | head -3 || true
               echo "Tools available:"
-              command -v perf llvm-bolt perf2bolt merge-fdata ab 2>&1
-              perf --version 2>&1
-              llvm-bolt --version 2>&1 | head -1
+              for tool in perf llvm-bolt perf2bolt merge-fdata ab; do
+                echo "  $tool: $(command -v $tool 2>/dev/null || echo NOT FOUND)"
+              done
+              perf --version 2>&1 || true
+              llvm-bolt --version 2>&1 | head -1 || true
               echo ""
 
               echo "=== DEBUG: Available RPMs ==="
-              ls -lh /rpms/*.rpm 2>/dev/null
+              ls -lh /rpms/*.rpm 2>/dev/null || true
 
               echo ""
               echo "=== Installing baseline nginx ==="
@@ -142,9 +144,9 @@ jobs:
 
               echo ""
               echo "=== DEBUG: nginx binary info ==="
-              file /usr/local/sbin/nginx
-              ls -lh /usr/local/sbin/nginx
-              ldd /usr/local/sbin/nginx 2>&1 | head -20
+              file /usr/local/sbin/nginx 2>/dev/null || true
+              ls -lh /usr/local/sbin/nginx 2>/dev/null || true
+              ldd /usr/local/sbin/nginx 2>&1 | head -20 || true
 
               echo ""
               echo ":: nginx -V ::"
@@ -159,14 +161,14 @@ jobs:
               sleep 2
 
               echo "=== DEBUG: nginx processes ==="
-              ps aux | grep nginx
+              ps aux | grep nginx || true
               echo ""
               echo "=== DEBUG: nginx listening ==="
-              ss -tlnp | grep -E ":80|nginx" || netstat -tlnp 2>/dev/null | grep -E ":80|nginx" || true
+              ss -tlnp 2>/dev/null | grep -E ":80|nginx" || netstat -tlnp 2>/dev/null | grep -E ":80|nginx" || echo "DEBUG: ss/netstat not available"
 
               echo ""
               echo "=== DEBUG: Quick connectivity test ==="
-              curl -sI http://127.0.0.1:80/ 2>&1 | head -5 || echo "WARN: curl not available"
+              curl -sI http://127.0.0.1:80/ 2>&1 | head -5 || echo "DEBUG: curl not available"
               ab -n 10 -c 1 http://127.0.0.1:80/ 2>&1 | tail -5
 
               DURATION=${{ inputs.profile_duration }}
@@ -313,16 +315,16 @@ jobs:
             -v ${{ github.workspace }}/output:/output \
             ${{ env.TOOLS_IMAGE }} bash -ce '
               echo "=== DEBUG: Input artifacts ==="
-              ls -lh /profiles/
-              ls -lh /rpms/*.rpm 2>/dev/null
+              ls -lh /profiles/ || true
+              ls -lh /rpms/*.rpm 2>/dev/null || true
               echo ""
               echo "=== DEBUG: nginx.fdata stats ==="
-              wc -l /profiles/nginx.fdata
-              head -5 /profiles/nginx.fdata
+              wc -l /profiles/nginx.fdata || true
+              head -5 /profiles/nginx.fdata || true
               echo ""
               echo "=== DEBUG: original binary ==="
-              file /profiles/nginx.original
-              ls -lh /profiles/nginx.original
+              file /profiles/nginx.original 2>/dev/null || true
+              ls -lh /profiles/nginx.original || true
 
               echo ""
               echo "=== Applying BOLT optimization ==="
@@ -352,8 +354,8 @@ jobs:
                 echo "  Diff:     ${DIFF} bytes"
                 echo ""
                 echo "=== DEBUG: BOLT binary info ==="
-                file /output/nginx.bolt
-                ldd /output/nginx.bolt 2>&1 | head -20
+                file /output/nginx.bolt 2>/dev/null || true
+                ldd /output/nginx.bolt 2>&1 | head -20 || true
               else
                 echo "FAIL: llvm-bolt failed to produce optimized binary"
                 exit 1

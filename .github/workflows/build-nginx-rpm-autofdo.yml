@@ -138,15 +138,17 @@ jobs:
             -v ${{ github.workspace }}/profiles:/profiles \
             ${{ env.TOOLS_IMAGE }} bash -ce '
               echo "=== DEBUG: Container environment ==="
-              cat /etc/os-release | head -3
+              cat /etc/os-release | head -3 || true
               echo "Tools available:"
-              command -v perf create_gcov ab 2>&1
-              perf --version 2>&1
+              for tool in perf create_gcov ab; do
+                echo "  $tool: $(command -v $tool 2>/dev/null || echo NOT FOUND)"
+              done
+              perf --version 2>&1 || true
               create_gcov --help 2>&1 | head -3 || echo "WARN: create_gcov --help failed"
               echo ""
 
               echo "=== DEBUG: Available RPMs ==="
-              ls -lh /rpms/*.rpm 2>/dev/null
+              ls -lh /rpms/*.rpm 2>/dev/null || true
 
               echo ""
               echo "=== Installing baseline nginx ==="
@@ -154,8 +156,8 @@ jobs:
 
               echo ""
               echo "=== DEBUG: nginx binary info ==="
-              file /usr/local/sbin/nginx
-              ls -lh /usr/local/sbin/nginx
+              file /usr/local/sbin/nginx 2>/dev/null || true
+              ls -lh /usr/local/sbin/nginx 2>/dev/null || true
               echo ""
 
               echo "=== Verifying nginx ==="
@@ -168,10 +170,10 @@ jobs:
               sleep 2
 
               echo "=== DEBUG: nginx processes ==="
-              ps aux | grep nginx
+              ps aux | grep nginx || true
               echo ""
               echo "=== DEBUG: nginx listening ==="
-              ss -tlnp | grep -E ":80|nginx" || netstat -tlnp 2>/dev/null | grep -E ":80|nginx" || true
+              ss -tlnp 2>/dev/null | grep -E ":80|nginx" || netstat -tlnp 2>/dev/null | grep -E ":80|nginx" || echo "DEBUG: ss/netstat not available"
               echo ""
               echo "=== DEBUG: Quick connectivity test ==="
               ab -n 10 -c 1 http://127.0.0.1:80/ 2>&1 | tail -5
@@ -317,9 +319,9 @@ jobs:
 
               echo ""
               echo "=== DEBUG: Installed binary ==="
-              file /usr/local/sbin/nginx
-              ls -lh /usr/local/sbin/nginx
-              ldd /usr/local/sbin/nginx 2>&1 | head -20
+              file /usr/local/sbin/nginx 2>/dev/null || true
+              ls -lh /usr/local/sbin/nginx 2>/dev/null || true
+              ldd /usr/local/sbin/nginx 2>&1 | head -20 || true
 
               echo ""
               echo ":: nginx -V ::"
