@@ -61,27 +61,123 @@ jobs:
       - name: Build RPMs
         run: mkdir -p output && chmod 777 output && docker run --rm -e CRYPTO=${{ inputs.crypto || 'system' }} -e ZLIB=${{ inputs.zlib || 'system' }} -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
 
-      - name: Verify module spec generation
+      - name: Build module RPMs
         run: |
-          docker run --rm rpmbuild:el${{ matrix.el_version }} bash -c '
-            cd /home/builder/rpmbuild/SPECS
-            echo "=== Verifying module spec generation (CRYPTO=${{ inputs.crypto || 'system' }}, ZLIB=${{ inputs.zlib || 'system' }}) ==="
-            PASS=0
-            FAIL=0
-            for mod in accesskey brotli cache-purge dav-ext echo encrypted-session fancyindex geoip2 headers-more http-concat http-rdns http-redis length-hiding lua memc ndk njs redis2 set-misc srcache ssl-fingerprint sticky subs-filter testcookie upstream-check vts xslt zstd; do
-              if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs CRYPTO=${{ inputs.crypto || 'system' }} ZLIB=${{ inputs.zlib || 'system' }} nginx-module-${mod}.spec 2>&1; then
-                echo "PASS: nginx-module-${mod}.spec generated"
-                PASS=$((PASS+1))
-              else
-                echo "FAIL: nginx-module-${mod}.spec failed"
-                FAIL=$((FAIL+1))
+          docker run --rm \
+            -e CRYPTO=${{ inputs.crypto || 'system' }} \
+            -e ZLIB=${{ inputs.zlib || 'system' }} \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ matrix.el_version }} bash -c '
+              set +e
+              CRYPTO=${CRYPTO:-system}
+              ZLIB=${ZLIB:-system}
+              # Recreate nginx tarball symlink (needed by module-% prerequisite)
+              cd /home/builder/contrib && make .sum-nginx
+              ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOURCES/
+              # Recreate crypto/zlib symlinks if needed
+              if [ "$CRYPTO" = "awslc" ]; then
+                make .sum-awslc
+                ln -sf /home/builder/contrib/tarballs/aws-lc-*.tar.gz /home/builder/rpmbuild/SOURCES/
               fi
-            done
-            echo "=== Module spec summary: $PASS passed, $FAIL failed ==="
-          '
+              if [ "$CRYPTO" = "openssl" ]; then
+                make .sum-openssl
+                ln -sf /home/builder/contrib/tarballs/openssl-*.tar.gz /home/builder/rpmbuild/SOURCES/
+              fi
+              if [ "$ZLIB" = "cloudflare" ]; then
+                make .sum-cf-zlib
+                ln -sf /home/builder/contrib/tarballs/zlib-*.tar.gz /home/builder/rpmbuild/SOURCES/
+              fi
+              cd /home/builder/rpmbuild/SPECS
+              PASS=0; FAIL=0; FAILED=""
+              BUILD_START=$(date +%s)
+              for mod in accesskey brotli cache-purge dav-ext echo encrypted-session \
+                fancyindex geoip2 headers-more http-concat http-rdns http-redis \
+                image-filter length-hiding lua memc ndk njs redis2 set-misc srcache \
+                ssl-fingerprint sticky subs-filter testcookie upstream-check vts xslt zstd; do
+                echo ""; echo "===> Building module: ${mod}"
+                MOD_START=$(date +%s)
+                if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs \
+                  CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO:-n} MARCH=${MARCH:-generic} \
+                  LINKER=${LINKER:-default} AUTOFDO=${AUTOFDO:-none} \
+                  module-${mod} 2>&1; then
+                  MOD_END=$(date +%s)
+                  echo "PASS: module-${mod} ($((MOD_END-MOD_START))s)"
+                  PASS=$((PASS+1))
+                else
+                  MOD_END=$(date +%s)
+                  echo "FAIL: module-${mod} ($((MOD_END-MOD_START))s)"
+                  FAIL=$((FAIL+1))
+                  FAILED="${FAILED} ${mod}"
+                fi
+              done
+              BUILD_END=$(date +%s)
+              echo ""
+              echo "=== Module build summary: $PASS passed, $FAIL failed (total: $((BUILD_END-BUILD_START))s) ==="
+              [ -n "$FAILED" ] && echo "Failed modules:${FAILED}"
+              find ../RPMS ../SRPMS -name "*.rpm" -exec cp -v {} /output/ \;
+            '
 
       - name: List built RPMs
         run: ls -lh output/
+
+      - name: Verify module RPMs
+        run: |
+          echo "=== Module RPM verification ==="
+          EXPECTED=29
+          MODULE_RPMS=$(ls output/centminmod-nginx-module-*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v '\.src\.rpm')
+          ACTUAL=$(echo "$MODULE_RPMS" | grep -c '\.rpm$' || echo 0)
+          echo "Expected: $EXPECTED module RPMs"
+          echo "Found: $ACTUAL module RPMs"
+          echo ""
+          echo "--- Module RPMs built ---"
+          if [ -n "$MODULE_RPMS" ]; then
+            echo "$MODULE_RPMS" | while read f; do
+              echo "  $(basename "$f") ($(du -h "$f" | cut -f1))"
+            done
+          else
+            echo "  No module RPMs found"
+          fi
+          echo ""
+          if [ "$ACTUAL" -ge "$EXPECTED" ]; then
+            echo "PASS: All $EXPECTED module RPMs built"
+          else
+            echo "WARNING: Only $ACTUAL/$EXPECTED module RPMs built (some modules may have failed)"
+          fi
+
+      - name: Verify module loading
+        run: |
+          docker run --rm --user root \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ matrix.el_version }} bash -c '
+              echo "=== Installing base nginx RPM ==="
+              main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
+              if [ -z "$main_rpm" ]; then
+                echo "FAIL: base nginx RPM not found"
+                exit 1
+              fi
+              rpm -ivh --nodeps "$main_rpm" 2>&1
+              echo ""
+              echo "=== Installing module RPMs ==="
+              INSTALLED=0; INSTALL_FAIL=0
+              for rpm_file in /output/centminmod-nginx-module-*.x86_64.rpm; do
+                [ -f "$rpm_file" ] || continue
+                echo "$rpm_file" | grep -q debuginfo && continue
+                echo "$rpm_file" | grep -q '\.src\.rpm' && continue
+                mod_name=$(basename "$rpm_file")
+                if rpm -ivh --nodeps "$rpm_file" 2>&1; then
+                  INSTALLED=$((INSTALLED+1))
+                else
+                  echo "INSTALL FAIL: $mod_name"
+                  INSTALL_FAIL=$((INSTALL_FAIL+1))
+                fi
+              done
+              echo ""
+              echo "=== Module .so files in /usr/local/nginx/modules/ ==="
+              ls -la /usr/local/nginx/modules/*.so 2>/dev/null || echo "No .so files found"
+              SO_COUNT=$(ls /usr/local/nginx/modules/*.so 2>/dev/null | wc -l)
+              echo ""
+              echo "=== Module install summary: $INSTALLED installed, $INSTALL_FAIL failed, $SO_COUNT .so files ==="
+            '
 
       - name: Verify RPM packages
         run: |

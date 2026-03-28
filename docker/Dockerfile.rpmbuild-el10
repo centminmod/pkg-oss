@@ -6,8 +6,10 @@ RUN dnf -y groupinstall 'Development Tools' && \
     /usr/bin/crb enable && \
     dnf -y install zlib-devel pcre2-devel openssl-devel systemd-devel mold \
     wget tar gzip xz rpm-build rpmdevtools \
-    libxml2 libxslt \
-    cmake ninja-build golang perl-core && \
+    libxml2-devel libxslt-devel \
+    cmake ninja-build golang perl-core \
+    brotli-devel libmaxminddb-devel gd-devel libedit-devel libatomic \
+    libzstd-devel perl-devel perl-ExtUtils-Embed which && \
     dnf clean all
 
 # Create builder user with rpmbuild directory structure
