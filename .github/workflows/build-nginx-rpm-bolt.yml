@@ -402,9 +402,9 @@ jobs:
                 echo "  Original:      ${ORIG_SIZE} bytes ($((ORIG_SIZE/1024))KB)"
                 echo "  BOLT (raw):    ${BOLT_SIZE} bytes ($((BOLT_SIZE/1024))KB)"
 
-                # Strip debug info only from BOLT binary — BOLT rewrites ELF layout
+                # Strip debug info only from BOLT binary -- BOLT rewrites ELF layout
                 # so strip --strip-unneeded corrupts it. Use strip -g (debug only)
-                # or llvm-strip which understands BOLT's section layout.
+                # or llvm-strip which understands BOLT section layout.
                 cp /output/nginx.bolt /output/nginx.bolt.unstripped
                 if llvm-strip --strip-unneeded /output/nginx.bolt 2>/dev/null; then
                   echo "  Stripped with llvm-strip"
