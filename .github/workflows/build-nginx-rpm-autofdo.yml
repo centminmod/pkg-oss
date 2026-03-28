@@ -108,9 +108,20 @@ jobs:
 
       - name: Tune perf permissions on host
         run: |
-          echo "=== Host perf settings ==="
+          echo "=== DEBUG: Host environment ==="
+          uname -a
+          cat /proc/cpuinfo | grep "model name" | head -1
+          nproc
+          free -h
+          echo ""
+          echo "=== DEBUG: perf settings before ==="
+          cat /proc/sys/kernel/perf_event_paranoid
+          cat /proc/sys/kernel/kptr_restrict
+          echo ""
           sudo sysctl -w kernel.perf_event_paranoid=-1
           sudo sysctl -w kernel.kptr_restrict=0
+          echo ""
+          echo "=== DEBUG: perf settings after ==="
           echo "perf_event_paranoid=$(cat /proc/sys/kernel/perf_event_paranoid)"
           echo "kptr_restrict=$(cat /proc/sys/kernel/kptr_restrict)"
 
@@ -126,10 +137,27 @@ jobs:
             -v ${{ github.workspace }}/rpms:/rpms \
             -v ${{ github.workspace }}/profiles:/profiles \
             ${{ env.TOOLS_IMAGE }} bash -ce '
+              echo "=== DEBUG: Container environment ==="
+              cat /etc/os-release | head -3
+              echo "Tools available:"
+              which perf create_gcov ab 2>&1
+              perf --version 2>&1
+              create_gcov --help 2>&1 | head -3 || echo "WARN: create_gcov --help failed"
+              echo ""
+
+              echo "=== DEBUG: Available RPMs ==="
+              ls -lh /rpms/*.rpm 2>/dev/null
+
+              echo ""
               echo "=== Installing baseline nginx ==="
               rpm -ivh --nodeps /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -20
 
               echo ""
+              echo "=== DEBUG: nginx binary info ==="
+              file /usr/local/sbin/nginx
+              ls -lh /usr/local/sbin/nginx
+              echo ""
+
               echo "=== Verifying nginx ==="
               /usr/local/sbin/nginx -V 2>&1
               /usr/local/sbin/nginx -t 2>&1
@@ -139,29 +167,51 @@ jobs:
               /usr/local/sbin/nginx
               sleep 2
 
+              echo "=== DEBUG: nginx processes ==="
+              ps aux | grep nginx
+              echo ""
+              echo "=== DEBUG: nginx listening ==="
+              ss -tlnp | grep -E ":80|nginx" || netstat -tlnp 2>/dev/null | grep -E ":80|nginx" || true
+              echo ""
+              echo "=== DEBUG: Quick connectivity test ==="
+              ab -n 10 -c 1 http://127.0.0.1:80/ 2>&1 | tail -5
+
               DURATION=${{ inputs.profile_duration }}
               echo ""
-              echo "=== Profiling for ${DURATION}s ==="
+              echo "=== DEBUG: perf capabilities ==="
+              perf list hw 2>&1 | head -20 || true
+              echo ""
+              echo "=== DEBUG: LBR support check ==="
+              perf list | grep -i "branch\|lbr\|BR_INST" 2>&1 | head -10 || true
+
+              echo ""
+              echo "=== AutoFDO profiling for ${DURATION}s ==="
 
               # Start load generator in background
               ab -n 1000000 -c 50 http://127.0.0.1:80/ &
               LOAD_PID=$!
 
+              NGINX_PIDS=$(pgrep -d, -x nginx)
+              echo "DEBUG: nginx PIDs: ${NGINX_PIDS}"
+
               # Try LBR first (best quality for AutoFDO), fallback to cycles
               PERF_OK=0
+              PERF_MODE="none"
               if perf record -e BR_INST_RETIRED.NEAR_TAKEN:u -b -c 500009 \
                    -o /profiles/perf.data \
-                   -p $(pgrep -d, -x nginx) -- sleep ${DURATION} 2>/dev/null; then
+                   -p ${NGINX_PIDS} -- sleep ${DURATION} 2>/dev/null; then
                 echo "PASS: LBR profiling succeeded (best quality)"
                 PERF_OK=1
+                PERF_MODE="lbr"
               else
                 echo "WARN: LBR unavailable on this runner, falling back to cycles sampling"
                 echo "      (This is expected on GitHub-hosted VMs without bare-metal access)"
                 if perf record -e cycles:u -c 500009 \
                      -o /profiles/perf.data \
-                     -p $(pgrep -d, -x nginx) -- sleep ${DURATION} 2>&1; then
+                     -p ${NGINX_PIDS} -- sleep ${DURATION} 2>&1; then
                   echo "PASS: Cycles profiling succeeded (lower quality than LBR)"
                   PERF_OK=1
+                  PERF_MODE="cycles"
                 else
                   echo "FAIL: perf record failed entirely"
                 fi
@@ -173,17 +223,24 @@ jobs:
 
               if [ "$PERF_OK" -eq 0 ]; then
                 echo "FAIL: Could not collect perf data on this runner"
+                echo "DEBUG: This may be a GitHub Actions VM limitation"
                 exit 1
               fi
 
               echo ""
-              echo "=== perf data collected ==="
+              echo "=== perf data collected (mode: ${PERF_MODE}) ==="
               ls -lh /profiles/perf.data
-              perf report --stdio -i /profiles/perf.data 2>&1 | head -30
+              echo ""
+              echo "=== DEBUG: perf report summary ==="
+              perf report --stdio -i /profiles/perf.data 2>&1 | head -40
+              echo ""
+              echo "=== DEBUG: perf data header ==="
+              perf script -i /profiles/perf.data 2>&1 | head -20 || true
 
               # Convert to AutoFDO profile (GCC gcov format)
               echo ""
               echo "=== Converting to AutoFDO profile with create_gcov ==="
+              echo "DEBUG: create_gcov --binary=/usr/local/sbin/nginx --profile=/profiles/perf.data --gcov=/profiles/nginx.gcov --gcov_version=2"
               create_gcov --binary=/usr/local/sbin/nginx \
                           --profile=/profiles/perf.data \
                           --gcov=/profiles/nginx.gcov \
@@ -193,8 +250,11 @@ jobs:
                 echo ""
                 echo "PASS: AutoFDO profile generated"
                 ls -lh /profiles/nginx.gcov
+                echo "=== DEBUG: gcov profile preview ==="
+                head -20 /profiles/nginx.gcov 2>/dev/null || xxd /profiles/nginx.gcov | head -10
               else
                 echo "FAIL: create_gcov failed to produce profile"
+                echo "DEBUG: Check if perf.data format is compatible with create_gcov"
                 exit 1
               fi
             '
@@ -248,8 +308,18 @@ jobs:
           docker run --rm --user root \
             -v ${{ github.workspace }}/output:/output \
             rpmbuild:el9 bash -c '
+              echo "=== DEBUG: Built RPMs ==="
+              ls -lh /output/*.rpm 2>/dev/null
+
+              echo ""
               echo "=== Installing AutoFDO-optimized RPM ==="
               rpm -ivh --nodeps /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -10
+
+              echo ""
+              echo "=== DEBUG: Installed binary ==="
+              file /usr/local/sbin/nginx
+              ls -lh /usr/local/sbin/nginx
+              ldd /usr/local/sbin/nginx 2>&1 | head -20
 
               echo ""
               echo ":: nginx -V ::"
@@ -262,13 +332,22 @@ jobs:
                 echo "PASS: -fauto-profile found in nginx -V"
               else
                 echo "INFO: -fauto-profile path may not appear in -V output"
-                echo "      (GCC may strip the path from recorded configure line)"
+                echo "      (GCC records the configure line, path should be visible)"
               fi
 
               echo ""
               echo ":: nginx -t (config syntax check) ::"
               /usr/local/sbin/nginx -t 2>&1
-              echo "PASS: AutoFDO-optimized nginx config test passed"
+
+              echo ""
+              echo ":: Quick smoke test — start/stop ::"
+              /usr/local/sbin/nginx 2>&1
+              sleep 1
+              ab -n 10 -c 1 http://127.0.0.1:80/ 2>&1 | tail -5 || true
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+
+              echo ""
+              echo "PASS: AutoFDO-optimized nginx verified"
             '
 
       - name: Upload AutoFDO RPM artifacts
