@@ -218,23 +218,55 @@ jobs:
             echo "=== Installing nginx for benchmark ==="
             main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
             rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -3
-            dnf -y install httpd-tools 2>&1 | tail -3
+            dnf -y install httpd-tools nghttp2 2>&1 | tail -5
+
+            # Generate self-signed TLS cert for HTTP/2 benchmark
+            openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+              -keyout /tmp/bench.key -out /tmp/bench.crt \
+              -subj "/CN=localhost" 2>/dev/null
+            mkdir -p /usr/local/nginx/conf/conf.d
+            cat > /usr/local/nginx/conf/conf.d/bench-ssl.conf << SSLEOF
+server {
+    listen 8443 ssl;
+    http2 on;
+    server_name localhost;
+    ssl_certificate /tmp/bench.crt;
+    ssl_certificate_key /tmp/bench.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:1m;
+    location / {
+        root /usr/local/nginx/html;
+    }
+}
+SSLEOF
+
+            /usr/local/sbin/nginx
+            sleep 1
 
             echo ""
             echo "=========================================="
-            echo "=== NGINX BENCHMARK                     ==="
+            echo "=== HTTP/1.1 BENCHMARK (ab)            ==="
             echo "=== EL${{ matrix.el_version }} crypto=${{ inputs.crypto || '\''system'\'' }} zlib=${{ inputs.zlib || '\''system'\'' }} ==="
             echo "=========================================="
-            /usr/local/sbin/nginx
-            sleep 1
-            # Warmup
             ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
-            # Benchmark runs
             for run in 1 2 3; do
               echo ""
-              echo "--- Benchmark run ${run}/3 ---"
+              echo "--- HTTP/1.1 run ${run}/3 ---"
               ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
             done
+
+            echo ""
+            echo "=========================================="
+            echo "=== HTTP/2+TLS BENCHMARK (h2load)      ==="
+            echo "=== EL${{ matrix.el_version }} crypto=${{ inputs.crypto || '\''system'\'' }} zlib=${{ inputs.zlib || '\''system'\'' }} ==="
+            echo "=========================================="
+            h2load -n 10000 -c 50 -m 10 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1
+            for run in 1 2 3; do
+              echo ""
+              echo "--- HTTP/2+TLS run ${run}/3 ---"
+              h2load -n 100000 -c 100 -m 10 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes"
+            done
+
             /usr/local/sbin/nginx -s quit 2>/dev/null || true
             echo ""
             echo "=== Benchmark complete ==="
