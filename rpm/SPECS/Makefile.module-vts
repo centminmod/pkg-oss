@@ -1,0 +1,34 @@
+MODULES+=	vts
+
+MODULE_SUMMARY_vts=	3rd-party virtual host traffic status dynamic module
+
+MODULE_CONTRIB_DEPS_vts=	nginx-module-vts
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_vts),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_vts=	$(NGINX_MODULE_VTS_VERSION)
+MODULE_RELEASE_vts=	1
+
+MODULE_VERSION_PREFIX_vts=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_vts=	nginx-module-vts-$(NGINX_MODULE_VTS_VERSION).tar.gz
+
+MODULE_CONFARGS_vts=	--add-dynamic-module=nginx-module-vts-$(NGINX_MODULE_VTS_VERSION)
+
+define MODULE_POST_vts
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_vts) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_vhost_traffic_status_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/vozlt/nginx-module-vts
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_vts

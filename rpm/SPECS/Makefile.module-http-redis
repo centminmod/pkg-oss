@@ -1,0 +1,34 @@
+MODULES+=	http-redis
+
+MODULE_SUMMARY_http_redis=	3rd-party Redis HTTP caching dynamic module
+
+MODULE_CONTRIB_DEPS_http-redis=	ngx_http_redis
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_http-redis),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_http_redis=	$(NGX_HTTP_REDIS_VERSION)
+MODULE_RELEASE_http_redis=	1
+
+MODULE_VERSION_PREFIX_http_redis=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_http_redis=	ngx_http_redis-$(NGX_HTTP_REDIS_VERSION).tar.gz
+
+MODULE_CONFARGS_http_redis=	--add-dynamic-module=ngx_http_redis-$(NGX_HTTP_REDIS_VERSION)
+
+define MODULE_POST_http_redis
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_http_redis) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_redis_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/centminmod/ngx_http_redis
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_http_redis

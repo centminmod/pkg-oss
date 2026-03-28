@@ -68,7 +68,7 @@ jobs:
             echo "=== Verifying module spec generation (CRYPTO=${{ inputs.crypto || 'system' }}, ZLIB=${{ inputs.zlib || 'system' }}) ==="
             PASS=0
             FAIL=0
-            for mod in fancyindex cache-purge echo memc redis2 srcache zstd; do
+            for mod in brotli cache-purge dav-ext echo encrypted-session fancyindex geoip2 headers-more http-redis lua memc ndk njs redis2 set-misc srcache subs-filter vts xslt zstd; do
               if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs CRYPTO=${{ inputs.crypto || 'system' }} ZLIB=${{ inputs.zlib || 'system' }} nginx-module-${mod}.spec 2>&1; then
                 echo "PASS: nginx-module-${mod}.spec generated"
                 PASS=$((PASS+1))
