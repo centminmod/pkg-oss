@@ -126,7 +126,7 @@ jobs:
               for mod in accesskey brotli cache-purge dav-ext echo encrypted-session \
                 fancyindex geoip2 headers-more http-concat http-rdns http-redis \
                 image-filter length-hiding lua memc ndk njs redis2 set-misc srcache \
-                sticky subs-filter testcookie vts xslt zstd; do
+                subs-filter testcookie vts xslt zstd; do
                 echo ""; echo "===> Building module: ${mod}"
                 MOD_START=$(date +%s)
                 LOG="/tmp/module-logs/${mod}.log"
@@ -192,7 +192,7 @@ jobs:
       - name: Verify module RPMs
         run: |
           echo "=== Module RPM verification ==="
-          EXPECTED=27
+          EXPECTED=26
           MODULE_RPMS=$(ls output/nginx-module-*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v '\.src\.rpm' || true)
           ACTUAL=$(echo "$MODULE_RPMS" | grep -c '\.rpm$' || echo 0)
           echo "Expected: $EXPECTED module RPMs"
