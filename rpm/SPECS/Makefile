@@ -45,7 +45,7 @@ MODULE_TARGET_PREFIX=$(TARGET_VERSION)+
 
 PACKAGE_VENDOR=	Centmin Mod <centminmod@centminmod.com>
 
-BASE_MODULES=	accesskey brotli cache-purge dav-ext echo encrypted-session fancyindex geoip2 headers-more http-concat http-rdns http-redis image-filter length-hiding lua memc ndk njs redis2 set-misc srcache ssl-fingerprint sticky subs-filter testcookie upstream-check vts xslt zstd
+BASE_MODULES=	accesskey brotli cache-purge dav-ext echo encrypted-session fancyindex geoip2 headers-more http-concat http-rdns http-redis image-filter length-hiding lua memc ndk njs redis2 set-misc srcache sticky subs-filter testcookie vts xslt zstd
 
 MODULES=
 

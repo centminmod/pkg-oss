@@ -13,6 +13,8 @@ MODULE_VERSION_PREFIX_sticky=$(MODULE_TARGET_PREFIX)
 
 MODULE_SOURCES_sticky=	nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH).tar.gz
 
+MODULE_PATCHES_sticky=	$(CONTRIB)/src/nginx-sticky-module-ng/dynamic-module.patch
+
 MODULE_CONFARGS_sticky=	--add-dynamic-module=nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH)
 
 define MODULE_POST_sticky

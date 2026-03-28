@@ -120,32 +120,69 @@ jobs:
                 ln -sf /home/builder/contrib/tarballs/zlib-*.tar.gz /home/builder/rpmbuild/SOURCES/
               fi
               cd /home/builder/rpmbuild/SPECS
+              mkdir -p /tmp/module-logs
               PASS=0; FAIL=0; FAILED=""
               BUILD_START=$(date +%s)
               for mod in accesskey brotli cache-purge dav-ext echo encrypted-session \
                 fancyindex geoip2 headers-more http-concat http-rdns http-redis \
                 image-filter length-hiding lua memc ndk njs redis2 set-misc srcache \
-                ssl-fingerprint sticky subs-filter testcookie upstream-check vts xslt zstd; do
+                sticky subs-filter testcookie vts xslt zstd; do
                 echo ""; echo "===> Building module: ${mod}"
                 MOD_START=$(date +%s)
-                if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs \
+                LOG="/tmp/module-logs/${mod}.log"
+                make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs \
                   CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO} MARCH=${MARCH} \
                   LINKER=${LINKER} AUTOFDO=${AUTOFDO:-none} \
-                  module-${mod} 2>&1; then
-                  MOD_END=$(date +%s)
-                  echo "PASS: module-${mod} ($((MOD_END-MOD_START))s)"
+                  module-${mod} > "$LOG" 2>&1
+                RC=$?
+                MOD_END=$(date +%s)
+                if [ $RC -eq 0 ]; then
+                  SO_COUNT=$(find ../RPMS -name "centminmod-nginx-module-${mod}*.rpm" -newer "$LOG" 2>/dev/null | wc -l)
+                  echo "PASS: module-${mod} ($((MOD_END-MOD_START))s) [${SO_COUNT} RPMs]"
                   PASS=$((PASS+1))
                 else
-                  MOD_END=$(date +%s)
-                  echo "FAIL: module-${mod} ($((MOD_END-MOD_START))s)"
+                  echo "FAIL: module-${mod} ($((MOD_END-MOD_START))s) [exit=$RC]"
                   FAIL=$((FAIL+1))
                   FAILED="${FAILED} ${mod}"
+                  echo "--- Failure diagnostics for ${mod} ---"
+                  echo "::group::${mod} build log (last 30 lines)"
+                  tail -30 "$LOG"
+                  echo "::endgroup::"
+                  if grep -q "No rule to make target.*rpm-changelog" "$LOG"; then
+                    echo "  CAUSE: Missing docs/nginx-module-${mod}.xml changelog file"
+                  fi
+                  if grep -q "Illegal char" "$LOG"; then
+                    echo "  CAUSE: Invalid character in RPM Version/Release field"
+                    grep "Illegal char" "$LOG"
+                  fi
+                  if grep -q "File not found:.*/modules/\*" "$LOG"; then
+                    echo "  CAUSE: No .so files produced — module may not support dynamic loading"
+                  fi
+                  if grep -q "error:.*No such file" "$LOG"; then
+                    echo "  CAUSE: Missing file at install time"
+                    grep "No such file" "$LOG" | tail -3
+                  fi
+                  if grep -q "configure: error" "$LOG"; then
+                    echo "  CAUSE: nginx configure failed"
+                    grep "configure: error" "$LOG" | tail -3
+                  fi
+                  if grep -qE "\.(c|cc|cpp):[0-9]+:[0-9]+: error:" "$LOG"; then
+                    echo "  CAUSE: Compilation error"
+                    grep -E "\.(c|cc|cpp):[0-9]+:[0-9]+: error:" "$LOG" | tail -5
+                  fi
+                  echo "--- End diagnostics for ${mod} ---"
                 fi
               done
               BUILD_END=$(date +%s)
               echo ""
-              echo "=== Module build summary: $PASS passed, $FAIL failed (total: $((BUILD_END-BUILD_START))s) ==="
-              [ -n "$FAILED" ] && echo "Failed modules:${FAILED}"
+              echo "=========================================="
+              echo "=== MODULE BUILD SUMMARY ==="
+              echo "=========================================="
+              echo "  Passed: $PASS"
+              echo "  Failed: $FAIL"
+              echo "  Total:  $((PASS+FAIL)) modules in $((BUILD_END-BUILD_START))s"
+              [ -n "$FAILED" ] && echo "  Failed:${FAILED}"
+              echo "=========================================="
               find ../RPMS ../SRPMS -name "*.rpm" -exec cp -v {} /output/ \;
             '
 
@@ -155,8 +192,8 @@ jobs:
       - name: Verify module RPMs
         run: |
           echo "=== Module RPM verification ==="
-          EXPECTED=29
-          MODULE_RPMS=$(ls output/centminmod-nginx-module-*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v '\.src\.rpm')
+          EXPECTED=27
+          MODULE_RPMS=$(ls output/centminmod-nginx-module-*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v '\.src\.rpm' || true)
           ACTUAL=$(echo "$MODULE_RPMS" | grep -c '\.rpm$' || echo 0)
           echo "Expected: $EXPECTED module RPMs"
           echo "Found: $ACTUAL module RPMs"
