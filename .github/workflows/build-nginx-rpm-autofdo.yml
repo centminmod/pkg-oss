@@ -345,7 +345,7 @@ jobs:
               echo ":: Quick smoke test — start/stop ::"
               /usr/local/sbin/nginx 2>&1
               sleep 1
-              ab -n 10 -c 1 http://127.0.0.1:80/ 2>&1 | tail -5 || true
+              curl -sI http://127.0.0.1:80/ 2>&1 | head -3 || echo "DEBUG: curl not available, skipping HTTP test"
               /usr/local/sbin/nginx -s quit 2>/dev/null || true
 
               echo ""
