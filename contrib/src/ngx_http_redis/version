@@ -1,0 +1,1 @@
+NGX_HTTP_REDIS_VERSION := 0.4.1-cmm

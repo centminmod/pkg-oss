@@ -1,0 +1,42 @@
+MODULES+=	dav-ext
+
+MODULE_SUMMARY_dav_ext=	3rd-party WebDAV extended dynamic module
+
+MODULE_CONTRIB_DEPS_dav-ext=	nginx-dav-ext-module
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_dav-ext),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_dav_ext=	$(NGINX_DAV_EXT_MODULE_VERSION)
+MODULE_RELEASE_dav_ext=	1
+
+MODULE_VERSION_PREFIX_dav_ext=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_dav_ext=	nginx-dav-ext-module-$(NGINX_DAV_EXT_MODULE_VERSION).tar.gz
+
+MODULE_CONFARGS_dav_ext=	--add-dynamic-module=nginx-dav-ext-module-$(NGINX_DAV_EXT_MODULE_VERSION)
+
+define MODULE_DEFINITIONS_dav_ext
+BuildRequires: libxml2-devel
+BuildRequires: libxslt-devel
+endef
+export MODULE_DEFINITIONS_dav_ext
+
+define MODULE_POST_dav_ext
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_dav_ext) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_dav_ext_module.so;
+
+Note: The standard ngx_http_dav_module must also be enabled (compiled in by default).
+
+Please refer to the module documentation for further details:
+https://github.com/arut/nginx-dav-ext-module
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_dav_ext
