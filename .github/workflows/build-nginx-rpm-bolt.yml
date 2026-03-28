@@ -128,7 +128,7 @@ jobs:
               echo "=== DEBUG: Container environment ==="
               cat /etc/os-release | head -3
               echo "Tools available:"
-              which perf llvm-bolt perf2bolt merge-fdata ab 2>&1
+              command -v perf llvm-bolt perf2bolt merge-fdata ab 2>&1
               perf --version 2>&1
               llvm-bolt --version 2>&1 | head -1
               echo ""
