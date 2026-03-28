@@ -1,0 +1,34 @@
+MODULES+=	length-hiding
+
+MODULE_SUMMARY_length_hiding=	3rd-party length hiding filter dynamic module
+
+MODULE_CONTRIB_DEPS_length-hiding=	nginx-length-hiding-filter-module
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_length-hiding),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_length_hiding=	$(NGINX_LENGTH_HIDING_FILTER_MODULE_VERSION)
+MODULE_RELEASE_length_hiding=	1
+
+MODULE_VERSION_PREFIX_length_hiding=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_length_hiding=	nginx-length-hiding-filter-module-$(NGINX_LENGTH_HIDING_FILTER_MODULE_VERSION).tar.gz
+
+MODULE_CONFARGS_length_hiding=	--add-dynamic-module=nginx-length-hiding-filter-module-$(NGINX_LENGTH_HIDING_FILTER_MODULE_VERSION)
+
+define MODULE_POST_length_hiding
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_length_hiding) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_length_hiding_filter_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/nulab/nginx-length-hiding-filter-module
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_length_hiding

@@ -1,0 +1,36 @@
+MODULES+=	ssl-fingerprint
+
+MODULE_SUMMARY_ssl_fingerprint=	3rd-party SSL/TLS JA3 fingerprint dynamic module
+
+MODULE_CONTRIB_DEPS_ssl-fingerprint=	nginx-ssl-fingerprint
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_ssl-fingerprint),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_ssl_fingerprint=	$(NGINX_SSL_FINGERPRINT_VERSION)
+MODULE_RELEASE_ssl_fingerprint=	1
+
+MODULE_VERSION_PREFIX_ssl_fingerprint=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_ssl_fingerprint=	nginx-ssl-fingerprint-$(NGINX_SSL_FINGERPRINT_VERSION).tar.gz
+
+MODULE_CONFARGS_ssl_fingerprint=	--add-dynamic-module=nginx-ssl-fingerprint-$(NGINX_SSL_FINGERPRINT_VERSION)
+
+define MODULE_POST_ssl_fingerprint
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_ssl_fingerprint) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_ssl_fingerprint_module.so;
+
+Note: This module requires OpenSSL (not compatible with BoringSSL/LibreSSL).
+
+Please refer to the module documentation for further details:
+https://github.com/centminmod/nginx-ssl-fingerprint
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_ssl_fingerprint

@@ -1,0 +1,34 @@
+MODULES+=	accesskey
+
+MODULE_SUMMARY_accesskey=	3rd-party access key authentication dynamic module
+
+MODULE_CONTRIB_DEPS_accesskey=	nginx-accesskey
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_accesskey),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_accesskey=	$(NGINX_ACCESSKEY_VERSION)
+MODULE_RELEASE_accesskey=	1
+
+MODULE_VERSION_PREFIX_accesskey=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_accesskey=	nginx-accesskey-$(NGINX_ACCESSKEY_VERSION).tar.gz
+
+MODULE_CONFARGS_accesskey=	--add-dynamic-module=nginx-accesskey-$(NGINX_ACCESSKEY_VERSION)
+
+define MODULE_POST_accesskey
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_accesskey) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_accesskey_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/Martchus/nginx-accesskey
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_accesskey

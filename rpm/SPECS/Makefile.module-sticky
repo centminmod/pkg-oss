@@ -1,0 +1,34 @@
+MODULES+=	sticky
+
+MODULE_SUMMARY_sticky=	3rd-party sticky session dynamic module
+
+MODULE_CONTRIB_DEPS_sticky=	nginx-sticky-module-ng
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_sticky),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_sticky=	$(NGINX_STICKY_MODULE_NG_VERSION)
+MODULE_RELEASE_sticky=	1
+
+MODULE_VERSION_PREFIX_sticky=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_sticky=	nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH).tar.gz
+
+MODULE_CONFARGS_sticky=	--add-dynamic-module=nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH)
+
+define MODULE_POST_sticky
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_sticky) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_sticky_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/Refinitiv/nginx-sticky-module-ng
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_sticky
