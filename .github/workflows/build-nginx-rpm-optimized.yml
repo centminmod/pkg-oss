@@ -313,20 +313,7 @@ jobs:
               -keyout /tmp/bench.key -out /tmp/bench.crt \
               -subj "/CN=localhost" 2>/dev/null
             mkdir -p /usr/local/nginx/conf/conf.d
-            cat > /usr/local/nginx/conf/conf.d/bench-ssl.conf << SSLEOF
-server {
-    listen 8443 ssl;
-    http2 on;
-    server_name localhost;
-    ssl_certificate /tmp/bench.crt;
-    ssl_certificate_key /tmp/bench.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_session_cache shared:SSL:1m;
-    location / {
-        root /usr/local/nginx/html;
-    }
-}
-SSLEOF
+            printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / {\n        root /usr/local/nginx/html;\n    }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
 
             /usr/local/sbin/nginx
             sleep 1
