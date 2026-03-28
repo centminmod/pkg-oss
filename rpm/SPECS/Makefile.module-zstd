@@ -1,0 +1,40 @@
+MODULES+=	zstd
+
+MODULE_SUMMARY_zstd=	3rd-party zstd compression dynamic modules
+
+MODULE_CONTRIB_DEPS_zstd=	zstd-nginx-module
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_zstd),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_zstd=	$(ZSTD_NGINX_MODULE_VERSION)
+MODULE_RELEASE_zstd=	1
+
+MODULE_VERSION_PREFIX_zstd=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_zstd=	zstd-nginx-module-$(ZSTD_NGINX_MODULE_VERSION).tar.gz
+
+MODULE_CONFARGS_zstd=	--add-dynamic-module=zstd-nginx-module-$(ZSTD_NGINX_MODULE_VERSION)
+
+define MODULE_DEFINITIONS_zstd
+BuildRequires: libzstd-devel
+endef
+export MODULE_DEFINITIONS_zstd
+
+define MODULE_POST_zstd
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_zstd) for $(MODULE_SUMMARY_PREFIX) have been installed.
+To enable these modules, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_zstd_filter_module.so;
+    load_module modules/ngx_http_zstd_static_module.so;
+
+Please refer to the modules documentation for further details:
+https://github.com/tokers/zstd-nginx-module
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_zstd

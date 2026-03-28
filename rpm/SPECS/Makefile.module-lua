@@ -93,7 +93,7 @@ cat <<BANNER
 ----------------------------------------------------------------------
 
 The $(MODULE_SUMMARY_lua) for $(MODULE_SUMMARY_PREFIX) have been installed.
-To enable these modules, add the following to /etc/nginx/nginx.conf
+To enable these modules, add the following to /usr/local/nginx/conf/nginx.conf
 and reload nginx:
 
     load_module modules/ndk_http_module.so;

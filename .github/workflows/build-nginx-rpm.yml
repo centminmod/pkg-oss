@@ -14,10 +14,27 @@ on:
           - el8
           - el9-el10
           - el8-el9-el10
+      crypto:
+        description: 'Crypto library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - awslc
+          - openssl
+      zlib:
+        description: 'Compression library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - cloudflare
 
 jobs:
   build:
-    name: Build RPM (EL${{ matrix.el_version }})
+    name: Build RPM (EL${{ matrix.el_version }}, crypto=${{ inputs.crypto || 'system' }}, zlib=${{ inputs.zlib || 'system' }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -38,17 +55,17 @@ jobs:
         run: docker build -f docker/Dockerfile.rpmbuild-el${{ matrix.el_version }} -t rpmbuild:el${{ matrix.el_version }} .
 
       - name: Build RPMs
-        run: mkdir -p output && chmod 777 output && docker run --rm -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
+        run: mkdir -p output && chmod 777 output && docker run --rm -e CRYPTO=${{ inputs.crypto || 'system' }} -e ZLIB=${{ inputs.zlib || 'system' }} -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
 
       - name: Verify module spec generation
         run: |
           docker run --rm rpmbuild:el${{ matrix.el_version }} bash -c '
             cd /home/builder/rpmbuild/SPECS
-            echo "=== Verifying module spec generation ==="
+            echo "=== Verifying module spec generation (CRYPTO=${{ inputs.crypto || 'system' }}, ZLIB=${{ inputs.zlib || 'system' }}) ==="
             PASS=0
             FAIL=0
             for mod in fancyindex cache-purge echo memc redis2 srcache zstd; do
-              if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs nginx-module-${mod}.spec 2>&1; then
+              if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs CRYPTO=${{ inputs.crypto || 'system' }} ZLIB=${{ inputs.zlib || 'system' }} nginx-module-${mod}.spec 2>&1; then
                 echo "PASS: nginx-module-${mod}.spec generated"
                 PASS=$((PASS+1))
               else
@@ -93,7 +110,8 @@ jobs:
       - name: Verify RPM paths
         run: |
           echo "=== Checking Centmin Mod paths in main RPM ==="
-          main_rpm=$(ls output/centminmod-nginx-[0-9]*.x86_64.rpm 2>/dev/null | head -1)
+          # Handle crypto-variant package names (centminmod-nginx-awslc-*.rpm etc.)
+          main_rpm=$(ls output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
           if [ -n "$main_rpm" ]; then
             echo "Checking: $main_rpm"
             rpm -qlp "$main_rpm" | grep -c '/usr/local/nginx' && echo "PASS: /usr/local/nginx paths found" || echo "FAIL: no /usr/local/nginx paths"
@@ -111,7 +129,7 @@ jobs:
         run: |
           docker run --rm --user root -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }} bash -c '
             echo "=== Installing RPM and running nginx -V ==="
-            main_rpm=$(ls /output/centminmod-nginx-[0-9]*.x86_64.rpm 2>/dev/null | head -1)
+            main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
             if [ -z "$main_rpm" ]; then
               echo "FAIL: main RPM not found"
               exit 1

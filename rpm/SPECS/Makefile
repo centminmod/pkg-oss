@@ -43,28 +43,81 @@ MODULE_SPEC_TEMPLATE=	nginx$(MODULE_SUFFIX)-module.spec.in
 MODULE_PACKAGE_PREFIX=nginx$(MODULE_SUFFIX)-module
 MODULE_TARGET_PREFIX=$(TARGET_VERSION)+
 
-PACKAGE_VENDOR=	NGINX Packaging <nginx-packaging@f5.com>
+PACKAGE_VENDOR=	Centmin Mod <centminmod@centminmod.com>
 
-BASE_MODULES=	acme geoip image-filter njs otel perl xslt
+BASE_MODULES=	brotli cache-purge echo fancyindex geoip2 headers-more image-filter lua ndk njs set-misc xslt
 
 MODULES=
 
 -include Makefile.module-*
 
+BUILD_INFO?=	centminmod
+
+# Crypto library selection (default: system OpenSSL)
+# Usage: make CRYPTO=awslc nginx.spec
+#        make CRYPTO=openssl nginx.spec
+CRYPTO?=	system
+
+ifeq ($(CRYPTO),openssl)
+include $(CONTRIB)/src/openssl/version
+CRYPTO_PACKAGE_SUFFIX=	-openssl
+CRYPTO_SOURCES=	openssl-$(OPENSSL_CUSTOM_VERSION).tar.gz
+else ifeq ($(CRYPTO),awslc)
+include $(CONTRIB)/src/awslc/version
+CRYPTO_PACKAGE_SUFFIX=	-awslc
+CRYPTO_SOURCES=	aws-lc-$(AWSLC_VERSION).tar.gz
+else
+CRYPTO_PACKAGE_SUFFIX=
+CRYPTO_SOURCES=
+AWSLC_VERSION=
+OPENSSL_CUSTOM_VERSION=
+endif
+
+# Compression library selection (default: system zlib)
+# Usage: make ZLIB=cloudflare nginx.spec
+ZLIB?=	system
+
+ifeq ($(ZLIB),cloudflare)
+include $(CONTRIB)/src/cf-zlib/version
+ZLIB_SOURCES=	zlib-$(CF_ZLIB_COMMIT).tar.gz
+ZLIB_CONFIGURE_ARGS=	--with-zlib=../zlib-cloudflare-$(CF_ZLIB_VERSION) --with-zlib-opt=-fPIC
+else
+ZLIB_SOURCES=
+ZLIB_CONFIGURE_ARGS=
+CF_ZLIB_COMMIT=
+CF_ZLIB_SHORT=
+CF_ZLIB_VERSION=
+endif
+
+# LTO (Link-Time Optimization) support
+# Usage: make LTO=y nginx.spec
+LTO?=	n
+
+# Microarchitecture targeting
+# Usage: make MARCH=x86-64-v3 nginx.spec
+# Options: generic, x86-64-v2, x86-64-v3, x86-64-v4
+MARCH?=	generic
+
+# Linker selection
+# Usage: make LINKER=mold nginx.spec
+# Options: default, mold
+LINKER?=	default
+
 BASE_CONFIGURE_ARGS=\
-	--prefix=%{_sysconfdir}/nginx \
-	--sbin-path=%{_sbindir}/nginx \
-	--modules-path=%{_libdir}/nginx/modules \
-	--conf-path=%{_sysconfdir}/nginx/nginx.conf \
-	--error-log-path=%{_localstatedir}/log/nginx/error.log \
-	--http-log-path=%{_localstatedir}/log/nginx/access.log \
-	--pid-path=%{_localstatedir}/run/nginx.pid \
-	--lock-path=%{_localstatedir}/run/nginx.lock \
-	--http-client-body-temp-path=%{_localstatedir}/cache/nginx/client_temp \
-	--http-proxy-temp-path=%{_localstatedir}/cache/nginx/proxy_temp \
-	--http-fastcgi-temp-path=%{_localstatedir}/cache/nginx/fastcgi_temp \
-	--http-uwsgi-temp-path=%{_localstatedir}/cache/nginx/uwsgi_temp \
-	--http-scgi-temp-path=%{_localstatedir}/cache/nginx/scgi_temp \
+	--build=$(BUILD_INFO) \
+	--prefix=/usr/local/nginx \
+	--sbin-path=/usr/local/sbin/nginx \
+	--modules-path=/usr/local/nginx/modules \
+	--conf-path=/usr/local/nginx/conf/nginx.conf \
+	--error-log-path=/usr/local/nginx/logs/error.log \
+	--http-log-path=/usr/local/nginx/logs/access.log \
+	--pid-path=/usr/local/nginx/logs/nginx.pid \
+	--lock-path=/var/run/nginx.lock \
+	--http-client-body-temp-path=/var/cache/nginx/client_temp \
+	--http-proxy-temp-path=/var/cache/nginx/proxy_temp \
+	--http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp \
+	--http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp \
+	--http-scgi-temp-path=/var/cache/nginx/scgi_temp \
 	--user=%{nginx_user} \
 	--group=%{nginx_group} \
 	--with-compat \
@@ -163,7 +216,7 @@ ifeq ($(BASE_TARGET), plus)
 	cp -v $(DOCS)/EULA* $(SRCPATH)
 	cp -v $(DOCS)/CHANGES $(SRCPATH)
 endif
-	@echo "===> Creating $@"
+	@echo "===> Creating $@ (CRYPTO=$(CRYPTO), ZLIB=$(ZLIB), LTO=$(LTO), MARCH=$(MARCH), LINKER=$(LINKER))"
 	@{ \
 	set -e ; \
 	cp -p $(DOCS)/nginx.copyright $(SRCPATH) ; \
@@ -174,6 +227,46 @@ endif
 	for patch in $$patch_files; do \
 		cp -v $(CONTRIB)/src/nginx$(BASE_SUFFIX)/$$patch $(SRCPATH) ; \
 	done; \
+	base_prep_patches=`for i in $$patch_files; do echo $$i; done | \
+			awk '{ printf "%%patch -P%03d -p1\\\n", NR }'`; \
+	crypto_sources="" ; \
+	crypto_patches="" ; \
+	crypto_name="system" ; \
+	if [ "$(CRYPTO)" = "openssl" ]; then \
+		crypto_name="openssl" ; \
+		i=51 ; \
+		for src in $(CRYPTO_SOURCES); do \
+			ln -sf $(CONTRIB)/tarballs/$${src} $(SRCPATH)/$${src} ; \
+			crypto_sources="$${crypto_sources}Source$${i}: $${src}\n" ; \
+			i=$$(($${i}+1)) ; \
+		done ; \
+	elif [ "$(CRYPTO)" = "awslc" ]; then \
+		crypto_name="awslc" ; \
+		i=50 ; \
+		for src in $(CRYPTO_SOURCES); do \
+			ln -sf $(CONTRIB)/tarballs/$${src} $(SRCPATH)/$${src} ; \
+			crypto_sources="$${crypto_sources}Source$${i}: $${src}\n" ; \
+			i=$$(($${i}+1)) ; \
+		done ; \
+		j=50 ; \
+		for p in `ls $(CONTRIB)/src/awslc/*.patch 2>/dev/null | sort`; do \
+			pn=`basename $$p` ; \
+			cp -v $$p $(SRCPATH) ; \
+			crypto_patches="$${crypto_patches}Patch0$${j}: $${pn}\n" ; \
+			j=$$(($${j}+1)) ; \
+		done ; \
+	fi ; \
+	zlib_sources="" ; \
+	zlib_name="system" ; \
+	if [ "$(ZLIB)" = "cloudflare" ]; then \
+		zlib_name="cloudflare" ; \
+		i=60 ; \
+		for src in $(ZLIB_SOURCES); do \
+			ln -sf $(CONTRIB)/tarballs/$${src} $(SRCPATH)/$${src} ; \
+			zlib_sources="$${zlib_sources}Source$${i}: $${src}\n" ; \
+			i=$$(($${i}+1)) ; \
+		done ; \
+	fi ; \
 	sed nginx$(BASE_SUFFIX).spec.in \
 		-e 's#%%PACKAGE_VENDOR%%#$(PACKAGE_VENDOR)#g' \
 		-e 's#%%BASE_VERSION%%#$(BASE_VERSION)#g' \
@@ -181,7 +274,22 @@ endif
 		-e 's#%%PLUS_VERSION%%#$(PLUS_VERSION)#g' \
 		-e 's#%%PLUS_RELEASE%%#$(PLUS_RELEASE)#g' \
 		-e "s#%%BASE_PATCHES%%#$$patches#g" \
+		-e "s#%%BASE_PREP_PATCHES%%#$$base_prep_patches#g" \
 		-e 's#%%BASE_CONFIGURE_ARGS%%#$(BASE_CONFIGURE_ARGS)#g' \
+		-e 's#%%CRYPTO_PACKAGE_SUFFIX%%#$(CRYPTO_PACKAGE_SUFFIX)#g' \
+		-e "s#%%CRYPTO_NAME%%#$$crypto_name#g" \
+		-e "s#%%CRYPTO_SOURCES%%#$$crypto_sources#g" \
+		-e "s#%%CRYPTO_PATCHES%%#$$crypto_patches#g" \
+		-e 's#%%AWSLC_VERSION%%#$(AWSLC_VERSION)#g' \
+		-e 's#%%OPENSSL_CUSTOM_VERSION%%#$(OPENSSL_CUSTOM_VERSION)#g' \
+		-e "s#%%ZLIB_NAME%%#$$zlib_name#g" \
+		-e "s#%%ZLIB_SOURCES%%#$$zlib_sources#g" \
+		-e 's#%%ZLIB_CONFIGURE_ARGS%%#$(ZLIB_CONFIGURE_ARGS)#g' \
+		-e 's#%%CF_ZLIB_COMMIT%%#$(CF_ZLIB_COMMIT)#g' \
+		-e 's#%%CF_ZLIB_VERSION%%#$(CF_ZLIB_VERSION)#g' \
+		-e 's#%%LTO%%#$(LTO)#g' \
+		-e 's#%%MARCH%%#$(MARCH)#g' \
+		-e 's#%%LINKER%%#$(LINKER)#g' \
 		> nginx$(BASE_SUFFIX).spec ; \
 	sed nginx$(BASE_SUFFIX).rpm-changelog \
 		-e 's#%%BASE_VERSION%%#$(BASE_VERSION)#g' \
@@ -285,6 +393,16 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e 's#%%BASE_CONFIGURE_ARGS%%#$(BASE_CONFIGURE_ARGS)#g' \
 		-e "s#%%BASE_SUFFIX%%#$(BASE_SUFFIX)#g" \
 		-e "s#%%MODULE_CONFIGURE_ARGS%%#$(MODULE_CONFARGS_$(call modname, $*))#g" \
+		-e 's#%%CRYPTO_PACKAGE_SUFFIX%%#$(CRYPTO_PACKAGE_SUFFIX)#g' \
+		-e 's#%%CRYPTO_NAME%%#$(CRYPTO)#g' \
+		-e 's#%%OPENSSL_CUSTOM_VERSION%%#$(OPENSSL_CUSTOM_VERSION)#g' \
+		-e 's#%%ZLIB_NAME%%#$(ZLIB)#g' \
+		-e 's#%%ZLIB_CONFIGURE_ARGS%%#$(ZLIB_CONFIGURE_ARGS)#g' \
+		-e 's#%%CF_ZLIB_COMMIT%%#$(CF_ZLIB_COMMIT)#g' \
+		-e 's#%%CF_ZLIB_VERSION%%#$(CF_ZLIB_VERSION)#g' \
+		-e 's#%%LTO%%#$(LTO)#g' \
+		-e 's#%%MARCH%%#$(MARCH)#g' \
+		-e 's#%%LINKER%%#$(LINKER)#g' \
 		-e "s#%%COPYRIGHT_SOURCE%%#$${module_copyright}#g" \
 		-e "s#%%MODULE_SOURCES%%#$${sources}#g" \
 		-e "s#%%MODULE_PATCHES%%#$${patches}#g" \

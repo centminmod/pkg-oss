@@ -7,8 +7,8 @@ if [ -f /etc/sysconfig/nginx ]; then
 fi
 
 prog=nginx
-nginx=/usr/sbin/nginx
-conffile=${conffile:-/etc/nginx/nginx.conf}
+nginx=/usr/local/sbin/nginx
+conffile=${conffile:-/usr/local/nginx/conf/nginx.conf}
 pidfile=`/usr/bin/systemctl show -p PIDFile nginx.service | sed 's/^PIDFile=//' | tr ' ' '\n'`
 SLEEPSEC=${SLEEPSEC:-1}
 UPGRADEWAITLOOPS=${UPGRADEWAITLOOPS:-5}

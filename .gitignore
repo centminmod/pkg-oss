@@ -1,0 +1,6 @@
+# AI assistant config and context files (backed up to private repo)
+.claude/
+CLAUDE.md
+CLAUDE-*.md
+GEMINI.md
+AGENTS.md

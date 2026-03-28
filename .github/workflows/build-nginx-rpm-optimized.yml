@@ -1,0 +1,303 @@
+name: Build Centmin Mod Nginx RPM (Optimized)
+
+on:
+  workflow_dispatch:
+    inputs:
+      el_versions:
+        description: 'EL versions to build'
+        required: true
+        default: 'el9'
+        type: choice
+        options:
+          - el10
+          - el9
+          - el8
+          - el9-el10
+          - el8-el9-el10
+      crypto:
+        description: 'Crypto library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - awslc
+          - openssl
+      zlib:
+        description: 'Compression library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - cloudflare
+      lto:
+        description: 'Link-Time Optimization'
+        required: true
+        default: 'n'
+        type: choice
+        options:
+          - 'n'
+          - 'y'
+      march:
+        description: 'Microarchitecture target'
+        required: true
+        default: 'generic'
+        type: choice
+        options:
+          - generic
+          - x86-64-v2
+          - x86-64-v3
+          - x86-64-v4
+      linker:
+        description: 'Linker selection (LTO+mold is experimental)'
+        required: true
+        default: 'default'
+        type: choice
+        options:
+          - default
+          - mold
+
+jobs:
+  build:
+    name: Build RPM (EL${{ matrix.el_version }}, crypto=${{ inputs.crypto || 'system' }}, zlib=${{ inputs.zlib || 'system' }}, lto=${{ inputs.lto || 'n' }}, march=${{ inputs.march || 'generic' }}, linker=${{ inputs.linker || 'default' }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        el_version: ${{ fromJSON(
+          inputs.el_versions == 'el8' && '["8"]' ||
+          inputs.el_versions == 'el9' && '["9"]' ||
+          inputs.el_versions == 'el10' && '["10"]' ||
+          inputs.el_versions == 'el9-el10' && '["9","10"]' ||
+          inputs.el_versions == 'el8-el9-el10' && '["8","9","10"]' ||
+          '["9"]'
+          ) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile.rpmbuild-el${{ matrix.el_version }} -t rpmbuild:el${{ matrix.el_version }} .
+
+      - name: Build RPMs
+        run: mkdir -p output && chmod 777 output && docker run --rm -e CRYPTO=${{ inputs.crypto || 'system' }} -e ZLIB=${{ inputs.zlib || 'system' }} -e LTO=${{ inputs.lto || 'n' }} -e MARCH=${{ inputs.march || 'generic' }} -e LINKER=${{ inputs.linker || 'default' }} -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
+
+      - name: Verify module spec generation
+        run: |
+          docker run --rm rpmbuild:el${{ matrix.el_version }} bash -c '
+            cd /home/builder/rpmbuild/SPECS
+            echo "=== Verifying module spec generation (CRYPTO=${{ inputs.crypto || 'system' }}, ZLIB=${{ inputs.zlib || 'system' }}, LTO=${{ inputs.lto || 'n' }}, MARCH=${{ inputs.march || 'generic' }}, LINKER=${{ inputs.linker || 'default' }}) ==="
+            PASS=0
+            FAIL=0
+            for mod in fancyindex cache-purge echo memc redis2 srcache zstd; do
+              if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs CRYPTO=${{ inputs.crypto || 'system' }} ZLIB=${{ inputs.zlib || 'system' }} LTO=${{ inputs.lto || 'n' }} MARCH=${{ inputs.march || 'generic' }} LINKER=${{ inputs.linker || 'default' }} nginx-module-${mod}.spec 2>&1; then
+                echo "PASS: nginx-module-${mod}.spec generated"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: nginx-module-${mod}.spec failed"
+                FAIL=$((FAIL+1))
+              fi
+            done
+            echo "=== Module spec summary: $PASS passed, $FAIL failed ==="
+          '
+
+      - name: List built RPMs
+        run: ls -lh output/
+
+      - name: Verify RPM packages
+        run: |
+          echo "=== RPM package verification ==="
+          for rpm in output/*.rpm; do
+            [ -f "$rpm" ] || continue
+            echo ""
+            echo "--- $(basename $rpm) ---"
+            echo ""
+            echo ":: rpm -qip (package info) ::"
+            rpm -qip "$rpm"
+            echo ""
+            echo ":: rpm -qlp (file list) ::"
+            rpm -qlp "$rpm"
+            echo ""
+            echo ":: rpm -qp --provides ::"
+            rpm -qp --provides "$rpm"
+            echo ""
+            echo ":: rpm -qp --requires ::"
+            rpm -qp --requires "$rpm"
+            echo ""
+            echo ":: rpm -qp --conflicts ::"
+            rpm -qp --conflicts "$rpm" || true
+            echo ""
+            echo ":: rpm -Kp (signature/digest check) ::"
+            rpm -Kp "$rpm" || true
+            echo "==============================="
+          done
+
+      - name: Verify RPM paths
+        run: |
+          echo "=== Checking Centmin Mod paths in main RPM ==="
+          # Handle crypto-variant package names (centminmod-nginx-awslc-*.rpm etc.)
+          main_rpm=$(ls output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
+          if [ -n "$main_rpm" ]; then
+            echo "Checking: $main_rpm"
+            rpm -qlp "$main_rpm" | grep -c '/usr/local/nginx' && echo "PASS: /usr/local/nginx paths found" || echo "FAIL: no /usr/local/nginx paths"
+            rpm -qlp "$main_rpm" | grep -c '/usr/local/sbin/nginx' && echo "PASS: /usr/local/sbin/nginx binary found" || echo "FAIL: no /usr/local/sbin/nginx"
+            rpm -qip "$main_rpm" | grep -q 'centminmod-nginx' && echo "PASS: package name is centminmod-nginx" || echo "FAIL: wrong package name"
+            rpm -qip "$main_rpm" | grep -q 'Centmin Mod' && echo "PASS: vendor is Centmin Mod" || echo "FAIL: wrong vendor"
+            rpm -qp --provides "$main_rpm" | grep -q 'nginx =' && echo "PASS: provides nginx compatibility" || echo "FAIL: missing nginx provides"
+            rpm -qp --conflicts "$main_rpm" | grep -q 'nginx' && echo "PASS: conflicts with stock nginx" || echo "FAIL: missing nginx conflicts"
+          else
+            echo "FAIL: main RPM not found"
+            exit 1
+          fi
+
+      - name: Verify nginx -V output
+        env:
+          INPUT_LTO: ${{ inputs.lto || 'n' }}
+          INPUT_MARCH: ${{ inputs.march || 'generic' }}
+          INPUT_LINKER: ${{ inputs.linker || 'default' }}
+        run: |
+          docker run --rm --user root -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }} bash -c '
+            echo "=== Installing RPM and running nginx -V ==="
+            main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
+            if [ -z "$main_rpm" ]; then
+              echo "FAIL: main RPM not found"
+              exit 1
+            fi
+            rpm -ivh --nodeps "$main_rpm" 2>&1
+            echo ""
+            echo ":: nginx -V ::"
+            NGINX_V=$(/usr/local/sbin/nginx -V 2>&1)
+            echo "$NGINX_V"
+            echo ""
+            echo ":: nginx -t (config syntax check) ::"
+            /usr/local/sbin/nginx -t 2>&1 || true
+            echo ""
+            echo "=== Compiler verification ==="
+            PASS=0
+            FAIL=0
+            echo ":: Checking GCC version in built binary ::"
+            if echo "$NGINX_V" | grep -qiE "gcc [0-9]+\.[0-9]+"; then
+              GCC_USED=$(echo "$NGINX_V" | grep -oiE "gcc [0-9]+\.[0-9]+\.[0-9]+" | head -1)
+              echo "Built with: $GCC_USED"
+              EL_VERSION=$(rpm -E %{rhel})
+              case "$EL_VERSION" in
+                8) EXPECTED_GCC="14" ;;
+                9) EXPECTED_GCC="15" ;;
+                10) EXPECTED_GCC="14" ;;
+              esac
+              if echo "$GCC_USED" | grep -q "gcc ${EXPECTED_GCC}\."; then
+                echo "PASS: GCC major version matches expected ($EXPECTED_GCC) for EL${EL_VERSION}"
+                PASS=$((PASS+1))
+              else
+                echo "WARN: GCC version mismatch - expected GCC ${EXPECTED_GCC}, got $GCC_USED"
+                FAIL=$((FAIL+1))
+              fi
+            fi
+            echo ""
+            echo ":: Checking compiler flags in nginx -V ::"
+            for flag in "-O3" "-fstack-protector-strong" "-fstack-clash-protection" "-Wimplicit-fallthrough=0" "--param=ssp-buffer-size=4"; do
+              if echo "$NGINX_V" | grep -q -- "$flag"; then
+                echo "PASS: $flag found"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: $flag NOT found"
+                FAIL=$((FAIL+1))
+              fi
+            done
+            echo ""
+            echo ":: Checking FORTIFY_SOURCE level ::"
+            EL_VERSION=$(rpm -E %{rhel})
+            if [ "$EL_VERSION" = "10" ]; then
+              EXPECTED_FORTIFY="FORTIFY_SOURCE=3"
+            else
+              EXPECTED_FORTIFY="FORTIFY_SOURCE=2"
+            fi
+            if echo "$NGINX_V" | grep -q "$EXPECTED_FORTIFY"; then
+              echo "PASS: $EXPECTED_FORTIFY found (correct for EL${EL_VERSION})"
+              PASS=$((PASS+1))
+            else
+              echo "FAIL: $EXPECTED_FORTIFY NOT found"
+              FAIL=$((FAIL+1))
+            fi
+            echo ""
+            echo ":: Checking linker flags ::"
+            for flag in "--as-needed" "-Bsymbolic-functions"; do
+              if echo "$NGINX_V" | grep -q -- "$flag"; then
+                echo "PASS: $flag found"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: $flag NOT found"
+                FAIL=$((FAIL+1))
+              fi
+            done
+            echo ""
+            echo "=== Phase 5A optimization verification ==="
+            echo ":: Checking LTO flags (LTO='"'"'${{ inputs.lto || 'n' }}'"'"') ::"
+            if [ "${{ inputs.lto || 'n' }}" = "y" ]; then
+              if echo "$NGINX_V" | grep -q -- "-flto=auto"; then
+                echo "PASS: -flto=auto found (LTO enabled)"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: -flto=auto NOT found but LTO=y was requested"
+                FAIL=$((FAIL+1))
+              fi
+            else
+              if echo "$NGINX_V" | grep -q -- "-flto"; then
+                echo "FAIL: -flto found but LTO=n (should not be present)"
+                FAIL=$((FAIL+1))
+              else
+                echo "PASS: No -flto flag (LTO disabled as expected)"
+                PASS=$((PASS+1))
+              fi
+            fi
+            echo ""
+            echo ":: Checking MARCH flags (MARCH='"'"'${{ inputs.march || 'generic' }}'"'"') ::"
+            if [ "${{ inputs.march || 'generic' }}" != "generic" ]; then
+              if echo "$NGINX_V" | grep -q -- "-march=${{ inputs.march || 'generic' }}"; then
+                echo "PASS: -march=${{ inputs.march || 'generic' }} found"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: -march=${{ inputs.march || 'generic' }} NOT found"
+                FAIL=$((FAIL+1))
+              fi
+            else
+              if echo "$NGINX_V" | grep -q -- "-march="; then
+                echo "FAIL: -march= found but MARCH=generic (should not be present)"
+                FAIL=$((FAIL+1))
+              else
+                echo "PASS: No -march= flag (generic as expected)"
+                PASS=$((PASS+1))
+              fi
+            fi
+            echo ""
+            echo ":: Checking LINKER flags (LINKER='"'"'${{ inputs.linker || 'default' }}'"'"') ::"
+            if [ "${{ inputs.linker || 'default' }}" = "mold" ]; then
+              if echo "$NGINX_V" | grep -q -- "-fuse-ld=mold"; then
+                echo "PASS: -fuse-ld=mold found (mold linker enabled)"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: -fuse-ld=mold NOT found but LINKER=mold was requested"
+                FAIL=$((FAIL+1))
+              fi
+            else
+              if echo "$NGINX_V" | grep -q -- "-fuse-ld=mold"; then
+                echo "FAIL: -fuse-ld=mold found but LINKER=default (should not be present)"
+                FAIL=$((FAIL+1))
+              else
+                echo "PASS: No -fuse-ld=mold flag (default linker as expected)"
+                PASS=$((PASS+1))
+              fi
+            fi
+            echo ""
+            echo "=== Verification summary: $PASS passed, $FAIL failed ==="
+            if [ "$FAIL" -gt 0 ]; then
+              echo "WARNING: Some verification checks failed"
+            fi
+          '
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-rpms-el${{ matrix.el_version }}-optimized
+          path: output/*.rpm

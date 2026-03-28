@@ -2,6 +2,14 @@
 %define nginx_user nginx
 %define nginx_group nginx
 
+%global cm_prefix       /usr/local/nginx
+%global cm_sbindir      /usr/local/sbin
+%global cm_confdir      %{cm_prefix}/conf
+%global cm_logdir       %{cm_prefix}/logs
+%global cm_moduledir    %{cm_prefix}/modules
+%global cm_htmldir      %{cm_prefix}/html
+%global cm_cachedir     /var/cache/nginx
+
 %define __arch_install_post   /usr/lib/rpm/check-rpaths   /usr/lib/rpm/check-buildroot
 
 %if 0%{?rhel} || 0%{?amzn} || 0%{?fedora}
@@ -11,12 +19,6 @@ BuildRequires: openssl11-devel
 %else
 BuildRequires: openssl-devel
 %endif
-%endif
-
-%if 0%{?suse_version} >= 1315
-%define _group Productivity/Networking/Web/Servers
-BuildRequires: libopenssl-devel
-%define _debugsource_template %{nil}
 %endif
 
 %if (0%{?rhel} == 7) && (0%{?amzn} == 0)
@@ -33,12 +35,14 @@ Epoch: %{epoch}
 %if 0%{?rhel} == 8
 %define epoch 1
 Epoch: %{epoch}
+BuildRequires: gcc-toolset-14-gcc gcc-toolset-14-gcc-c++
 %define _debugsource_template %{nil}
 %endif
 
 %if 0%{?rhel} == 9
 %define epoch 1
 Epoch: %{epoch}
+BuildRequires: gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
 %define _debugsource_template %{nil}
 %endif
 
@@ -79,21 +83,82 @@ License: %%MODULE_PACKAGE_LICENSE%%
 BuildRoot: %{_tmppath}/%{name}-%{base_version}-%{base_release}-root
 BuildRequires: zlib-devel
 BuildRequires: pcre2-devel
-Requires: nginx-r%{base_version}
+Requires: centminmod-nginx%%CRYPTO_PACKAGE_SUFFIX%%-r%{base_version}
 Provides: %{name}-r%{base_version}
 
 %description
 nginx %%SHORT_SUMMARY%%.
 
-%if ( 0%{?suse_version} && 0%{?suse_version} < 1600 )
-%debug_package
+# Centmin Mod compiler flags — CC_OPT must match nginx.spec.in for ABI compatibility
+%if 0%{?rhel} >= 10
+%define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
+%else
+%define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-D_FORTIFY_SOURCE=2 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
+%endif
+# No -pie for module spec — modules build .so files, not executables
+%define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -Wl,-Bsymbolic-functions
+
+# LTO support — must match nginx.spec.in for ABI compatibility
+%if "%{opt_lto}" == "y"
+%define LTO_CC_OPT -flto=auto
+%define LTO_LD_OPT -flto=auto
+%else
+%define LTO_CC_OPT %{nil}
+%define LTO_LD_OPT %{nil}
 %endif
 
-%define WITH_CC_OPT $(echo %{optflags} $(pcre2-config --cflags))
-%define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,-as-needed
+# Microarchitecture targeting — must match nginx.spec.in
+%if "%{opt_march}" == "x86-64-v2"
+%define MARCH_CC_OPT -march=x86-64-v2
+%endif
+%if "%{opt_march}" == "x86-64-v3"
+%define MARCH_CC_OPT -march=x86-64-v3
+%endif
+%if "%{opt_march}" == "x86-64-v4"
+%define MARCH_CC_OPT -march=x86-64-v4
+%endif
+%if "%{opt_march}" == "generic"
+%define MARCH_CC_OPT %{nil}
+%endif
+
+# Mold linker — must match nginx.spec.in
+%if "%{opt_linker}" == "mold"
+%define LINKER_LD_OPT -fuse-ld=mold
+BuildRequires: mold
+%else
+%define LINKER_LD_OPT %{nil}
+%endif
+
+%define crypto_lib %%CRYPTO_NAME%%
+%define zlib_lib %%ZLIB_NAME%%
+%define opt_lto %%LTO%%
+%define opt_march %%MARCH%%
+%define opt_linker %%LINKER%%
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 %define MODULE_CONFIGURE_ARGS $(echo "%%MODULE_CONFIGURE_ARGS%%")
+
+%if "%{crypto_lib}" == "awslc"
+%define CRYPTO_CC_OPT -isystem %{bdir}/nginx-dep/include
+%define CRYPTO_LD_OPT -L%{bdir}/nginx-dep/lib64 -lssl -lcrypto -lpthread -ldl
+%define CRYPTO_CONFIGURE_ARGS %{nil}
+%endif
+%if "%{crypto_lib}" == "openssl"
+%define CRYPTO_CC_OPT %{nil}
+%define CRYPTO_LD_OPT %{nil}
+%define CRYPTO_CONFIGURE_ARGS --with-openssl=../openssl-%%OPENSSL_CUSTOM_VERSION%% --with-openssl-opt='enable-ec_nistp_64_gcc_128 enable-tls1_3'
+%endif
+%if "%{crypto_lib}" == "system"
+%define CRYPTO_CC_OPT %{nil}
+%define CRYPTO_LD_OPT %{nil}
+%define CRYPTO_CONFIGURE_ARGS %{nil}
+%endif
+
+%if "%{zlib_lib}" == "cloudflare"
+%define ZLIB_CONFIGURE_ARGS %%ZLIB_CONFIGURE_ARGS%%
+%else
+%define ZLIB_CONFIGURE_ARGS %{nil}
+%endif
 
 %prep
 %setup -qcTn %{name}-%{base_version}
@@ -105,12 +170,20 @@ ln -s . nginx%{?base_suffix}
 %%MODULE_PREP_PATCHES%%
 
 %build
+# Activate GCC toolset for enhanced compiler optimizations
+%if 0%{?rhel} == 8
+. /opt/rh/gcc-toolset-14/enable
+%endif
+%if 0%{?rhel} == 9
+. /opt/rh/gcc-toolset-15/enable
+%endif
+echo "GCC version: $(gcc --version | head -1)"
 %%MODULE_PREBUILD%%
 cd %{bdir}
 %%MODULE_ENV%%
-./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} \
-	--with-cc-opt="%{WITH_CC_OPT} %%MODULE_CC_OPT_DEBUG%%" \
-	--with-ld-opt="%{WITH_LD_OPT} %%MODULE_LD_OPT_DEBUG%%" \
+./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
+	--with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT} %%MODULE_CC_OPT_DEBUG%%" \
+	--with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %{LTO_LD_OPT} %{LINKER_LD_OPT} %%MODULE_LD_OPT_DEBUG%%" \
 	--with-debug
 make %{?_smp_mflags} modules
 for so in `find %{bdir}/objs/ -type f -name "*.so"`; do
@@ -118,9 +191,9 @@ debugso=`echo $so | sed -e 's|\.so$|-debug.so|'`
 mv $so $debugso
 done
 %%MODULE_ENV%%
-./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} \
-	--with-cc-opt="%{WITH_CC_OPT} %%MODULE_CC_OPT%%" \
-	--with-ld-opt="%{WITH_LD_OPT} %%MODULE_LD_OPT%%"
+./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
+	--with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT} %%MODULE_CC_OPT%%" \
+	--with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %{LTO_LD_OPT} %{LINKER_LD_OPT} %%MODULE_LD_OPT%%"
 make %{?_smp_mflags} modules
 
 %install
@@ -132,10 +205,10 @@ cd %{bdir}
 
 %%MODULE_PREINSTALL%%
 
-%{__mkdir} -p $RPM_BUILD_ROOT%{_libdir}/nginx/modules
+%{__mkdir} -p $RPM_BUILD_ROOT%{cm_moduledir}
 for so in `find %{bdir}/objs/ -maxdepth 1 -type f -name "*.so"`; do
 %{__install} -m755 $so \
-   $RPM_BUILD_ROOT%{_libdir}/nginx/modules/
+   $RPM_BUILD_ROOT%{cm_moduledir}/
 done
 
 %check
@@ -143,16 +216,12 @@ done
 cd %{bdir}
 grep -v 'usr/src' debugfiles.list > debugfiles.list.new && mv debugfiles.list.new debugfiles.list
 cat /dev/null > debugsources.list
-%if 0%{?suse_version} >= 1500
-cat /dev/null > debugsourcefiles.list
-%endif
-
 %clean
 %{__rm} -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root)
-%{_libdir}/nginx/modules/*
+%{cm_moduledir}/*
 %dir %{_datadir}/doc/%%NAME%%
 %{_datadir}/doc/%%NAME%%/*
 %%MODULE_FILES%%

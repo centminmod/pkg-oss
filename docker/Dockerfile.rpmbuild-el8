@@ -1,0 +1,52 @@
+FROM almalinux:8
+
+# Install build dependencies
+RUN dnf -y groupinstall 'Development Tools' && \
+    dnf -y install epel-release && \
+    /usr/bin/crb enable && \
+    dnf -y install zlib-devel pcre2-devel openssl-devel systemd-devel mold \
+    wget tar gzip xz rpm-build rpmdevtools \
+    libxml2 libxslt \
+    gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ \
+    cmake3 ninja-build golang perl-core && \
+    dnf clean all
+
+# Create builder user with rpmbuild directory structure
+RUN useradd -m builder && \
+    mkdir -p /home/builder/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS} && \
+    mkdir -p /output && chown builder:builder /output
+
+# Copy build files
+COPY rpm/SPECS/ /home/builder/rpmbuild/SPECS/
+COPY rpm/SOURCES/ /home/builder/rpmbuild/SOURCES/
+COPY contrib/ /home/builder/contrib/
+COPY docs/ /home/builder/docs/
+
+# Fix ownership
+RUN chown -R builder:builder /home/builder/rpmbuild /home/builder/contrib /home/builder/docs
+
+USER builder
+WORKDIR /home/builder/rpmbuild
+
+CMD ["bash", "-ce", "\
+BUILD_DATE=$(date +%d%m%y-%H%M%S) && \
+BUILD_OS=almalinux$(rpm -E %{rhel}) && \
+BUILD_INFO=${BUILD_DATE}-${BUILD_OS}-rpm && \
+CRYPTO=${CRYPTO:-system} && \
+ZLIB=${ZLIB:-system} && \
+LTO=${LTO:-n} && \
+MARCH=${MARCH:-generic} && \
+LINKER=${LINKER:-default} && \
+cd /home/builder/contrib && make .sum-nginx && \
+if [ \"$CRYPTO\" = \"awslc\" ]; then make .sum-awslc; fi && \
+if [ \"$CRYPTO\" = \"openssl\" ]; then make .sum-openssl; fi && \
+if [ \"$ZLIB\" = \"cloudflare\" ]; then make .sum-cf-zlib; fi && \
+ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOURCES/ && \
+if [ \"$CRYPTO\" = \"awslc\" ]; then ln -sf /home/builder/contrib/tarballs/aws-lc-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
+if [ \"$CRYPTO\" = \"openssl\" ]; then ln -sf /home/builder/contrib/tarballs/openssl-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
+if [ \"$ZLIB\" = \"cloudflare\" ]; then ln -sf /home/builder/contrib/tarballs/zlib-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
+cd /home/builder/rpmbuild/SPECS && \
+make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO} MARCH=${MARCH} LINKER=${LINKER} nginx.spec && \
+rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && \
+find ../RPMS ../SRPMS -name '*.rpm' -exec cp -v {} /output/ \\; && \
+echo 'Build complete. RPMs:' && ls -lh /output/"]

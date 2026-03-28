@@ -1,0 +1,113 @@
+--- nginx-1.29.7/src/event/ngx_event_openssl.h	2026-03-25 01:38:34
++++ nginx-1.29.7-patched/src/event/ngx_event_openssl.h	2026-03-28 02:06:21
+@@ -292,7 +292,7 @@
+     ngx_ssl_client_hello_arg *cb);
+ #ifdef SSL_CLIENT_HELLO_SUCCESS
+ int ngx_ssl_client_hello_callback(ngx_ssl_conn_t *ssl_conn, int *ad, void *arg);
+-#elif defined OPENSSL_IS_BORINGSSL
++#elif (defined OPENSSL_IS_BORINGSSL || defined OPENSSL_IS_AWSLC)
+ enum ssl_select_cert_result_t ngx_ssl_select_certificate(
+     const SSL_CLIENT_HELLO *client_hello);
+ #endif
+--- nginx-1.29.7/src/event/ngx_event_openssl.c	2026-03-25 01:38:34
++++ nginx-1.29.7-patched/src/event/ngx_event_openssl.c	2026-03-28 02:09:24
+@@ -786,7 +786,7 @@
+     ngx_pool_t        *pool;
+     ngx_connection_t  *c;
+ 
+-#ifdef OPENSSL_IS_BORINGSSL
++#if (defined OPENSSL_IS_BORINGSSL || defined OPENSSL_IS_AWSLC)
+     {
+     SSL_CTX    *ssl_ctx;
+     ngx_ssl_t  *ssl;
+@@ -1019,7 +1019,7 @@
+             return NGX_ERROR;
+         }
+ 
+-#ifdef OPENSSL_IS_BORINGSSL
++#if (defined OPENSSL_IS_BORINGSSL || defined OPENSSL_IS_AWSLC)
+         if (sk_X509_NAME_find(list, NULL, name) > 0) {
+ #else
+         if (sk_X509_NAME_find(list, name) >= 0) {
+@@ -1985,7 +1985,7 @@
+         return NGX_ERROR;
+     }
+ 
+-#elif defined OPENSSL_IS_BORINGSSL
++#elif (defined OPENSSL_IS_BORINGSSL || defined OPENSSL_IS_AWSLC)
+ 
+     SSL_CTX_set_select_certificate_cb(ssl->ctx, ngx_ssl_select_certificate);
+ 
+@@ -2062,7 +2062,7 @@
+     return SSL_CLIENT_HELLO_SUCCESS;
+ }
+ 
+-#elif defined OPENSSL_IS_BORINGSSL
++#elif (defined OPENSSL_IS_BORINGSSL || defined OPENSSL_IS_AWSLC)
+ 
+ enum ssl_select_cert_result_t ngx_ssl_select_certificate(
+     const SSL_CLIENT_HELLO *client_hello)
+@@ -5536,8 +5536,62 @@
+ ngx_int_t
+ ngx_ssl_get_curve(ngx_connection_t *c, ngx_pool_t *pool, ngx_str_t *s)
+ {
+-#ifdef SSL_get_negotiated_group
++#if defined(OPENSSL_IS_AWSLC)
++
++    uint16_t  curve_id;
++
++    curve_id = SSL_get_curve_id(c->ssl->connection);
++
++    switch (curve_id) {
++
++#ifdef SSL_CURVE_SECP224R1
++    case SSL_CURVE_SECP224R1:
++        ngx_str_set(s, "secp224r1");
++        return NGX_OK;
++#endif
++
++#ifdef SSL_CURVE_SECP256R1
++    case SSL_CURVE_SECP256R1:
++        ngx_str_set(s, "prime256v1");
++        return NGX_OK;
++#endif
++
++#ifdef SSL_CURVE_SECP384R1
++    case SSL_CURVE_SECP384R1:
++        ngx_str_set(s, "secp384r1");
++        return NGX_OK;
++#endif
+ 
++#ifdef SSL_CURVE_SECP521R1
++    case SSL_CURVE_SECP521R1:
++        ngx_str_set(s, "secp521r1");
++        return NGX_OK;
++#endif
++
++#ifdef SSL_CURVE_X25519
++    case SSL_CURVE_X25519:
++        ngx_str_set(s, "x25519");
++        return NGX_OK;
++#endif
++
++    case 0:
++        break;
++
++    default:
++        s->len = sizeof("0x0000") - 1;
++
++        s->data = ngx_pnalloc(pool, s->len);
++        if (s->data == NULL) {
++            return NGX_ERROR;
++        }
++
++        ngx_sprintf(s->data, "0x%04xd", curve_id);
++
++        return NGX_OK;
++    }
++
++#elif defined SSL_get_negotiated_group
++
+     int          nid;
+     const char  *name;
+ 
