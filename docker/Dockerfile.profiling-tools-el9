@@ -59,7 +59,7 @@ RUN dnf -y groupinstall 'Development Tools' && \
     /usr/bin/crb enable && \
     dnf -y install git cmake clang clang-devel llvm-devel \
     protobuf-devel protobuf-compiler \
-    libelf-devel libunwind-devel zstd libzstd-devel \
+    elfutils-libelf-devel libunwind-devel zstd libzstd-devel \
     openssl-devel && \
     dnf clean all
 
