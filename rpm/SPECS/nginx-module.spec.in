@@ -131,7 +131,7 @@ BuildRequires: mold
 
 # AutoFDO — must match nginx.spec.in for ABI compatibility
 %if "%{opt_autofdo}" != "none" && "%{opt_autofdo}" != ""
-%define AUTOFDO_CC_OPT -fauto-profile=%{opt_autofdo}
+%define AUTOFDO_CC_OPT -fauto-profile=%{opt_autofdo} -Wno-error=array-bounds
 %else
 %define AUTOFDO_CC_OPT %{nil}
 %endif
