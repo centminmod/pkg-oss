@@ -280,19 +280,48 @@ jobs:
               echo "Saved original binary: $(ls -lh /profiles/nginx.original)"
 
               # === BASELINE BENCHMARK ===
+              # Generate self-signed TLS cert for HTTP/2 benchmark
+              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+                -keyout /tmp/bench.key -out /tmp/bench.crt \
+                -subj "/CN=localhost" 2>/dev/null
+              mkdir -p /usr/local/nginx/conf/conf.d
+              cat > /usr/local/nginx/conf/conf.d/bench-ssl.conf << SSLEOF
+server {
+    listen 8443 ssl;
+    http2 on;
+    server_name localhost;
+    ssl_certificate /tmp/bench.crt;
+    ssl_certificate_key /tmp/bench.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:1m;
+    location / {
+        root /usr/local/nginx/html;
+    }
+}
+SSLEOF
+
               echo ""
               echo "=========================================="
-              echo "=== BASELINE BENCHMARK (before BOLT)   ==="
+              echo "=== BASELINE HTTP/1.1 BENCHMARK (ab)   ==="
               echo "=========================================="
               /usr/local/sbin/nginx
               sleep 1
-              # Warmup
               ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
-              # Benchmark runs
               for run in 1 2 3; do
                 echo ""
-                echo "--- Baseline benchmark run ${run}/3 ---"
+                echo "--- Baseline HTTP/1.1 run ${run}/3 ---"
                 ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+
+              echo ""
+              echo "=========================================="
+              echo "=== BASELINE HTTP/2+TLS BENCHMARK       ==="
+              echo "=========================================="
+              h2load -n 10000 -c 50 -m 10 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1 || true
+              for run in 1 2 3; do
+                echo ""
+                echo "--- Baseline HTTP/2+TLS run ${run}/3 ---"
+                h2load -n 100000 -c 100 -m 10 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes" || true
               done
               /usr/local/sbin/nginx -s quit 2>/dev/null || true
               echo ""
@@ -432,48 +461,85 @@ jobs:
               echo ":: nginx -t ::"
               /usr/local/sbin/nginx -t 2>&1
 
+              # Setup TLS for benchmarks
+              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+                -keyout /tmp/bench.key -out /tmp/bench.crt \
+                -subj "/CN=localhost" 2>/dev/null
+              mkdir -p /usr/local/nginx/conf/conf.d
+              cat > /usr/local/nginx/conf/conf.d/bench-ssl.conf << SSLEOF
+server {
+    listen 8443 ssl;
+    http2 on;
+    server_name localhost;
+    ssl_certificate /tmp/bench.crt;
+    ssl_certificate_key /tmp/bench.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:1m;
+    location / {
+        root /usr/local/nginx/html;
+    }
+}
+SSLEOF
+
               # === BOLT-OPTIMIZED BENCHMARK ===
               echo ""
               echo "=========================================="
-              echo "=== BOLT-OPTIMIZED BENCHMARK            ==="
+              echo "=== BOLT HTTP/1.1 BENCHMARK (ab)       ==="
               echo "=========================================="
               /usr/local/sbin/nginx 2>&1
               sleep 1
-              # Warmup
               ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
-              # Benchmark runs
               for run in 1 2 3; do
                 echo ""
-                echo "--- BOLT benchmark run ${run}/3 ---"
+                echo "--- BOLT HTTP/1.1 run ${run}/3 ---"
                 ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+
+              echo ""
+              echo "=========================================="
+              echo "=== BOLT HTTP/2+TLS BENCHMARK (h2load) ==="
+              echo "=========================================="
+              h2load -n 10000 -c 50 -m 10 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1 || true
+              for run in 1 2 3; do
+                echo ""
+                echo "--- BOLT HTTP/2+TLS run ${run}/3 ---"
+                h2load -n 100000 -c 100 -m 10 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes" || true
               done
               /usr/local/sbin/nginx -s quit 2>/dev/null || true
 
               echo ""
               echo "PASS: BOLT-optimized nginx benchmark complete"
 
-              # Also run baseline benchmark for side-by-side comparison
+              # === BASELINE BENCHMARK (for comparison) ===
               echo ""
               echo "=========================================="
               echo "=== BASELINE BENCHMARK (for comparison) ==="
               echo "=========================================="
-              # Stop BOLT nginx before replacing binary
-              /usr/local/sbin/nginx -s quit 2>/dev/null || true
               sleep 1
-              # Restore original binary
               cp /profiles/nginx.original /usr/local/sbin/nginx
               chmod 755 /usr/local/sbin/nginx
               /usr/local/sbin/nginx 2>&1
               sleep 1
+
+              echo "--- Baseline HTTP/1.1 ---"
               ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
               for run in 1 2 3; do
                 echo ""
-                echo "--- Baseline benchmark run ${run}/3 ---"
+                echo "--- Baseline HTTP/1.1 run ${run}/3 ---"
                 ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+
+              echo ""
+              echo "--- Baseline HTTP/2+TLS ---"
+              h2load -n 10000 -c 50 -m 10 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1 || true
+              for run in 1 2 3; do
+                echo ""
+                echo "--- Baseline HTTP/2+TLS run ${run}/3 ---"
+                h2load -n 100000 -c 100 -m 10 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes" || true
               done
               /usr/local/sbin/nginx -s quit 2>/dev/null || true
               echo ""
-              echo "=== Benchmark comparison complete — compare Requests/sec above ==="
+              echo "=== Benchmark comparison complete ==="
 
               # Copy baseline RPMs + BOLT binary to output
               cp /rpms/*.rpm /output/
