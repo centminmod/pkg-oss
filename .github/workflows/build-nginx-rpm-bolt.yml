@@ -379,8 +379,8 @@ jobs:
                 echo "PASS: BOLT-optimized binary produced"
                 ORIG_SIZE=$(stat -c%s /profiles/nginx.original)
                 BOLT_SIZE=$(stat -c%s /output/nginx.bolt)
-                echo "  Original: ${ORIG_SIZE} bytes ($(echo "scale=1; ${ORIG_SIZE}/1048576" | bc)MB)"
-                echo "  BOLT:     ${BOLT_SIZE} bytes ($(echo "scale=1; ${BOLT_SIZE}/1048576" | bc)MB)"
+                echo "  Original: ${ORIG_SIZE} bytes ($((ORIG_SIZE/1024))KB)"
+                echo "  BOLT:     ${BOLT_SIZE} bytes ($((BOLT_SIZE/1024))KB)"
                 DIFF=$((BOLT_SIZE - ORIG_SIZE))
                 echo "  Diff:     ${DIFF} bytes"
                 echo ""
