@@ -452,6 +452,9 @@ jobs:
               echo "=========================================="
               echo "=== BASELINE BENCHMARK (for comparison) ==="
               echo "=========================================="
+              # Stop BOLT nginx before replacing binary
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              sleep 1
               # Restore original binary
               cp /profiles/nginx.original /usr/local/sbin/nginx
               chmod 755 /usr/local/sbin/nginx
