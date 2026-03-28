@@ -402,12 +402,20 @@ jobs:
                 echo "  Original:      ${ORIG_SIZE} bytes ($((ORIG_SIZE/1024))KB)"
                 echo "  BOLT (raw):    ${BOLT_SIZE} bytes ($((BOLT_SIZE/1024))KB)"
 
-                # Strip relocation info + debug symbols from BOLT binary
-                # --emit-relocs data and BOLT metadata are not needed at runtime
+                # Strip debug info only from BOLT binary — BOLT rewrites ELF layout
+                # so strip --strip-unneeded corrupts it. Use strip -g (debug only)
+                # or llvm-strip which understands BOLT's section layout.
                 cp /output/nginx.bolt /output/nginx.bolt.unstripped
-                strip --strip-unneeded /output/nginx.bolt
+                if llvm-strip --strip-unneeded /output/nginx.bolt 2>/dev/null; then
+                  echo "  Stripped with llvm-strip"
+                elif strip -g /output/nginx.bolt 2>/dev/null; then
+                  echo "  Stripped debug info with strip -g"
+                else
+                  echo "  WARN: strip failed, using unstripped binary"
+                  cp /output/nginx.bolt.unstripped /output/nginx.bolt
+                fi
                 STRIPPED_SIZE=$(stat -c%s /output/nginx.bolt)
-                echo "  BOLT (stripped): ${STRIPPED_SIZE} bytes ($((STRIPPED_SIZE/1024))KB)"
+                echo "  BOLT (final):  ${STRIPPED_SIZE} bytes ($((STRIPPED_SIZE/1024))KB)"
                 echo ""
                 echo "=== DEBUG: BOLT binary info ==="
                 file /output/nginx.bolt 2>/dev/null || true
@@ -460,9 +468,9 @@ jobs:
               # Stop BOLT nginx before replacing binary
               /usr/local/sbin/nginx -s quit 2>/dev/null || true
               sleep 1
-              # Restore original binary (also strip for fair comparison)
+              # Restore original binary (strip debug info for fair comparison)
               cp /profiles/nginx.original /usr/local/sbin/nginx
-              strip --strip-unneeded /usr/local/sbin/nginx
+              strip -g /usr/local/sbin/nginx 2>/dev/null || true
               chmod 755 /usr/local/sbin/nginx
               /usr/local/sbin/nginx 2>&1
               sleep 1
