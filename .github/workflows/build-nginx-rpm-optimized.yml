@@ -137,7 +137,7 @@ jobs:
                 RC=$?
                 MOD_END=$(date +%s)
                 if [ $RC -eq 0 ]; then
-                  SO_COUNT=$(find ../RPMS -name "centminmod-nginx-module-${mod}*.rpm" -newer "$LOG" 2>/dev/null | wc -l)
+                  SO_COUNT=$(find ../RPMS -name "nginx-module-${mod}*.rpm" -newer "$LOG" 2>/dev/null | wc -l)
                   echo "PASS: module-${mod} ($((MOD_END-MOD_START))s) [${SO_COUNT} RPMs]"
                   PASS=$((PASS+1))
                 else
@@ -193,7 +193,7 @@ jobs:
         run: |
           echo "=== Module RPM verification ==="
           EXPECTED=27
-          MODULE_RPMS=$(ls output/centminmod-nginx-module-*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v '\.src\.rpm' || true)
+          MODULE_RPMS=$(ls output/nginx-module-*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v '\.src\.rpm' || true)
           ACTUAL=$(echo "$MODULE_RPMS" | grep -c '\.rpm$' || echo 0)
           echo "Expected: $EXPECTED module RPMs"
           echo "Found: $ACTUAL module RPMs"
@@ -228,7 +228,7 @@ jobs:
               echo ""
               echo "=== Installing module RPMs ==="
               INSTALLED=0; INSTALL_FAIL=0
-              for rpm_file in /output/centminmod-nginx-module-*.x86_64.rpm; do
+              for rpm_file in /output/nginx-module-*.x86_64.rpm; do
                 [ -f "$rpm_file" ] || continue
                 echo "$rpm_file" | grep -q debuginfo && continue
                 echo "$rpm_file" | grep -q '\.src\.rpm' && continue

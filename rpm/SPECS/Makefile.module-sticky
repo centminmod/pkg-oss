@@ -13,9 +13,24 @@ MODULE_VERSION_PREFIX_sticky=$(MODULE_TARGET_PREFIX)
 
 MODULE_SOURCES_sticky=	nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH).tar.gz
 
-MODULE_PATCHES_sticky=	$(CONTRIB)/src/nginx-sticky-module-ng/dynamic-module.patch
-
 MODULE_CONFARGS_sticky=	--add-dynamic-module=nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH)
+
+define MODULE_PREBUILD_sticky
+cd %{bdir}/nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH) \&\& \
+printf 'ngx_addon_name=ngx_http_sticky_module\n\
+if test -n "$$ngx_module_link"; then\n\
+    ngx_module_type=HTTP\n\
+    ngx_module_name=ngx_http_sticky_module\n\
+    ngx_module_srcs="$$ngx_addon_dir/ngx_http_sticky_module.c $$ngx_addon_dir/ngx_http_sticky_misc.c"\n\
+    ngx_module_deps="$$ngx_addon_dir/ngx_http_sticky_misc.h"\n\
+    . auto/module\n\
+else\n\
+    HTTP_MODULES="$$HTTP_MODULES ngx_http_sticky_module"\n\
+    NGX_ADDON_SRCS="$$NGX_ADDON_SRCS $$ngx_addon_dir/ngx_http_sticky_module.c $$ngx_addon_dir/ngx_http_sticky_misc.c"\n\
+    NGX_ADDON_DEPS="$$NGX_ADDON_DEPS $$ngx_addon_dir/ngx_http_sticky_misc.h"\n\
+fi\n' > config
+endef
+export MODULE_PREBUILD_sticky
 
 define MODULE_POST_sticky
 cat <<BANNER

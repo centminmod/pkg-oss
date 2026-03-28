@@ -13,9 +13,22 @@ MODULE_VERSION_PREFIX_http_concat=$(MODULE_TARGET_PREFIX)
 
 MODULE_SOURCES_http_concat=	nginx-http-concat-$(NGINX_HTTP_CONCAT_VERSION).tar.gz
 
-MODULE_PATCHES_http_concat=	$(CONTRIB)/src/nginx-http-concat/dynamic-module.patch
-
 MODULE_CONFARGS_http_concat=	--add-dynamic-module=nginx-http-concat-$(NGINX_HTTP_CONCAT_VERSION)
+
+define MODULE_PREBUILD_http_concat
+cd %{bdir}/nginx-http-concat-$(NGINX_HTTP_CONCAT_VERSION) \&\& \
+printf 'ngx_addon_name=ngx_http_concat_module\n\
+if test -n "$$ngx_module_link"; then\n\
+    ngx_module_type=HTTP\n\
+    ngx_module_name=ngx_http_concat_module\n\
+    ngx_module_srcs="$$ngx_addon_dir/ngx_http_concat_module.c"\n\
+    . auto/module\n\
+else\n\
+    HTTP_MODULES="$$HTTP_MODULES ngx_http_concat_module"\n\
+    NGX_ADDON_SRCS="$$NGX_ADDON_SRCS $$ngx_addon_dir/ngx_http_concat_module.c"\n\
+fi\n' > config
+endef
+export MODULE_PREBUILD_http_concat
 
 define MODULE_POST_http_concat
 cat <<BANNER
