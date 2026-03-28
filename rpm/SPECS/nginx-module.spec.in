@@ -89,6 +89,14 @@ Provides: %{name}-r%{base_version}
 %description
 nginx %%SHORT_SUMMARY%%.
 
+# Option macros — must be defined BEFORE %if conditionals that test them
+%define crypto_lib %%CRYPTO_NAME%%
+%define zlib_lib %%ZLIB_NAME%%
+%define opt_lto %%LTO%%
+%define opt_march %%MARCH%%
+%define opt_linker %%LINKER%%
+%define opt_autofdo %%AUTOFDO%%
+
 # Centmin Mod compiler flags — CC_OPT must match nginx.spec.in for ABI compatibility
 %if 0%{?rhel} >= 10
 %define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
@@ -135,13 +143,6 @@ BuildRequires: mold
 %else
 %define AUTOFDO_CC_OPT %{nil}
 %endif
-
-%define crypto_lib %%CRYPTO_NAME%%
-%define zlib_lib %%ZLIB_NAME%%
-%define opt_lto %%LTO%%
-%define opt_march %%MARCH%%
-%define opt_linker %%LINKER%%
-%define opt_autofdo %%AUTOFDO%%
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 %define MODULE_CONFIGURE_ARGS $(echo "%%MODULE_CONFIGURE_ARGS%%")
