@@ -95,10 +95,12 @@ COPY --from=bolt-builder /tmp/bolt-build/bin/merge-fdata /usr/local/bin/
 # perf2bolt is a symlink to llvm-bolt (confirmed by LLVM source + dual-AI review)
 RUN ln -s /usr/local/bin/llvm-bolt /usr/local/bin/perf2bolt
 
-# Copy AutoFDO tools + shared libs built by autofdo (libglog.so.1 from submodule)
+# Copy AutoFDO tools + shared libs built by autofdo (libglog from submodule)
 COPY --from=autofdo-builder /tmp/autofdo/build/create_gcov /usr/local/bin/
-COPY --from=autofdo-builder /tmp/autofdo/build/third_party/glog/libglog.so* /usr/local/lib64/
-RUN ldconfig
+COPY --from=autofdo-builder /tmp/autofdo/build/third_party/glog/ /usr/local/lib64/autofdo-libs/
+RUN ln -sf /usr/local/lib64/autofdo-libs/libglog.so /usr/local/lib64/libglog.so.1 && \
+    ln -sf /usr/local/lib64/autofdo-libs/libglog.so /usr/local/lib64/libglog.so && \
+    echo "/usr/local/lib64" > /etc/ld.so.conf.d/autofdo.conf && ldconfig
 
 # Create dirs for nginx runtime (needed when installing nginx RPM for profiling)
 RUN mkdir -p /var/cache/nginx /usr/local/nginx/logs /usr/local/nginx/conf && \
