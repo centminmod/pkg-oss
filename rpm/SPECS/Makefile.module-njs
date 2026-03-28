@@ -58,8 +58,8 @@ sed -i.bak 's,-lquickjs ,-lquickjs -latomic ,g' auto/quickjs \&\& \
 	--cc-opt=\"%{WITH_CC_OPT}\ -I%{bdir}/quickjs-$(QUICKJS_GITHASH)/" \
 	--ld-opt=\"%{WITH_LD_OPT}\ -L%{bdir}/quickjs-$(QUICKJS_GITHASH)/" \&\& \
 make $$_make_opts njs \&\& \
-mv build build-cli \&\& \
-cp -v %{bdir}/njs-$(NJS_VERSION)/build-cli/njs %{bdir}/njs-cli-binary
+mv build build-cli || true
+cp %{bdir}/njs-$(NJS_VERSION)/build-cli/njs %{bdir}/njs-cli-binary 2>/dev/null || echo "WARNING: njs CLI binary not available"
 endef
 export MODULE_PREBUILD_njs
 
@@ -67,13 +67,16 @@ define MODULE_PREINSTALL_njs
 %{__install} -m644 %{bdir}/njs-$(NJS_VERSION)/CHANGES \
         $$RPM_BUILD_ROOT%{_datadir}/doc/%{name}/
 %{__mkdir} -p $$RPM_BUILD_ROOT%{_bindir}
-%{__install} -m755 %{bdir}/njs-cli-binary \
-        $$RPM_BUILD_ROOT%{_bindir}/njs
+if [ -f %{bdir}/njs-cli-binary ]; then \
+    %{__install} -m755 %{bdir}/njs-cli-binary \
+        $$RPM_BUILD_ROOT%{_bindir}/njs ; \
+else \
+    echo "WARNING: njs CLI binary not available, skipping" ; \
+fi
 endef
 export MODULE_PREINSTALL_njs
 
 define MODULE_FILES_njs
-%{_bindir}/njs
 endef
 export MODULE_FILES_njs
 

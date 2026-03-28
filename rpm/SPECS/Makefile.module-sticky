@@ -15,9 +15,11 @@ MODULE_SOURCES_sticky=	nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH).
 
 MODULE_CONFARGS_sticky=	--add-dynamic-module=nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH)
 
+MODULE_CC_OPT_sticky=-include openssl/md5.h -include openssl/sha.h -include openssl/evp.h
+MODULE_CC_OPT_DEBUG_sticky=-include openssl/md5.h -include openssl/sha.h -include openssl/evp.h
+
 define MODULE_PREBUILD_sticky
 cd %{bdir}/nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH) \&\& \
-sed -i '1i #include <openssl/md5.h>\n#include <openssl/sha.h>\n#include <openssl/evp.h>' ngx_http_sticky_misc.c \&\& \
 printf 'ngx_addon_name=ngx_http_sticky_module\n\
 if test -n "$$ngx_module_link"; then\n\
     ngx_module_type=HTTP\n\
