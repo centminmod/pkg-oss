@@ -1,0 +1,34 @@
+MODULES+=	testcookie
+
+MODULE_SUMMARY_testcookie=	3rd-party testcookie bot protection dynamic module
+
+MODULE_CONTRIB_DEPS_testcookie=	testcookie-nginx-module
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_testcookie),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_testcookie=	$(TESTCOOKIE_NGINX_MODULE_VERSION)
+MODULE_RELEASE_testcookie=	1
+
+MODULE_VERSION_PREFIX_testcookie=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_testcookie=	testcookie-nginx-module-$(TESTCOOKIE_NGINX_MODULE_GITHASH).tar.gz
+
+MODULE_CONFARGS_testcookie=	--add-dynamic-module=testcookie-nginx-module-$(TESTCOOKIE_NGINX_MODULE_GITHASH)
+
+define MODULE_POST_testcookie
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_testcookie) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_testcookie_access_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/kyprizel/testcookie-nginx-module
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_testcookie

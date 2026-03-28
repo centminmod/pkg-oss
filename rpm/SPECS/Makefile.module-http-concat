@@ -1,0 +1,34 @@
+MODULES+=	http-concat
+
+MODULE_SUMMARY_http_concat=	3rd-party HTTP concatenation dynamic module
+
+MODULE_CONTRIB_DEPS_http-concat=	nginx-http-concat
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_http-concat),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_http_concat=	$(NGINX_HTTP_CONCAT_VERSION)
+MODULE_RELEASE_http_concat=	1
+
+MODULE_VERSION_PREFIX_http_concat=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_http_concat=	nginx-http-concat-$(NGINX_HTTP_CONCAT_VERSION).tar.gz
+
+MODULE_CONFARGS_http_concat=	--add-dynamic-module=nginx-http-concat-$(NGINX_HTTP_CONCAT_VERSION)
+
+define MODULE_POST_http_concat
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_http_concat) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_concat_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/alibaba/nginx-http-concat
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_http_concat

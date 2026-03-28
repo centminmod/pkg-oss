@@ -1,0 +1,34 @@
+MODULES+=	http-rdns
+
+MODULE_SUMMARY_http_rdns=	3rd-party reverse DNS lookup dynamic module
+
+MODULE_CONTRIB_DEPS_http-rdns=	nginx-http-rdns
+
+include $(foreach dep,$(MODULE_CONTRIB_DEPS_http-rdns),$(CONTRIB)/src/$(dep)/version)
+
+MODULE_VERSION_http_rdns=	$(NGINX_HTTP_RDNS_VERSION)
+MODULE_RELEASE_http_rdns=	1
+
+MODULE_VERSION_PREFIX_http_rdns=$(MODULE_TARGET_PREFIX)
+
+MODULE_SOURCES_http_rdns=	nginx-http-rdns-$(NGINX_HTTP_RDNS_GITHASH).tar.gz
+
+MODULE_CONFARGS_http_rdns=	--add-dynamic-module=nginx-http-rdns-$(NGINX_HTTP_RDNS_GITHASH)
+
+define MODULE_POST_http_rdns
+cat <<BANNER
+----------------------------------------------------------------------
+
+The $(MODULE_SUMMARY_http_rdns) for $(MODULE_SUMMARY_PREFIX) has been installed.
+To enable this module, add the following to /usr/local/nginx/conf/nginx.conf
+and reload nginx:
+
+    load_module modules/ngx_http_rdns_module.so;
+
+Please refer to the module documentation for further details:
+https://github.com/flant/nginx-http-rdns
+
+----------------------------------------------------------------------
+BANNER
+endef
+export MODULE_POST_http_rdns
