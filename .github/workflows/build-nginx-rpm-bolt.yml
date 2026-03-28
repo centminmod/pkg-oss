@@ -78,18 +78,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build rpmbuild Docker image
-        run: docker build -f docker/Dockerfile.rpmbuild-el9 -t rpmbuild:el9 .
-
       - name: Patch spec for BOLT relocations
         run: |
           # BOLT needs --emit-relocs in the linked binary for full optimization.
           # Inject -Wl,--emit-relocs into WITH_LD_OPT in the spec template.
           # This is BOLT-specific — the baseline and optimized workflows don't need this.
+          # Must run BEFORE docker build since Dockerfile COPYs rpm/SPECS/ at build time.
           sed -i 's|%define WITH_LD_OPT -Wl,-z,relro|%define WITH_LD_OPT -Wl,--emit-relocs -Wl,-z,relro|' \
             rpm/SPECS/nginx.spec.in
           echo "Patched nginx.spec.in for BOLT --emit-relocs"
           grep 'WITH_LD_OPT' rpm/SPECS/nginx.spec.in
+
+      - name: Build rpmbuild Docker image
+        run: docker build -f docker/Dockerfile.rpmbuild-el9 -t rpmbuild:el9 .
 
       - name: Build baseline RPMs
         run: |
