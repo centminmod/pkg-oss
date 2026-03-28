@@ -42,6 +42,7 @@ if [ \"$LTO\" = \"y\" ]; then BUILD_INFO=\"${BUILD_INFO}-lto\"; fi && \
 if [ \"$MARCH\" != \"generic\" ]; then BUILD_INFO=\"${BUILD_INFO}-${MARCH}\"; fi && \
 if [ \"$LINKER\" != \"default\" ]; then BUILD_INFO=\"${BUILD_INFO}-${LINKER}\"; fi && \
 if [ \"$BOLT\" = \"y\" ]; then BUILD_INFO=\"${BUILD_INFO}-bolt\"; fi && \
+if [ \"$AUTOFDO\" != \"none\" ] && [ -n \"$AUTOFDO\" ]; then BUILD_INFO=\"${BUILD_INFO}-autofdo\"; fi && \
 cd /home/builder/contrib && make .sum-nginx && \
 if [ \"$CRYPTO\" = \"awslc\" ]; then make .sum-awslc; fi && \
 if [ \"$CRYPTO\" = \"openssl\" ]; then make .sum-openssl; fi && \
