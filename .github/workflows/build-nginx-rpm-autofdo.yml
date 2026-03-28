@@ -259,6 +259,25 @@ jobs:
                 echo "DEBUG: Check if perf.data format is compatible with create_gcov"
                 exit 1
               fi
+
+              # === BASELINE BENCHMARK ===
+              echo ""
+              echo "=========================================="
+              echo "=== BASELINE BENCHMARK (before AutoFDO) ==="
+              echo "=========================================="
+              /usr/local/sbin/nginx
+              sleep 1
+              # Warmup
+              ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+              # Benchmark runs
+              for run in 1 2 3; do
+                echo ""
+                echo "--- Baseline benchmark run ${run}/3 ---"
+                ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              echo ""
+              echo "=== Baseline benchmark complete ==="
             '
 
       - name: Upload AutoFDO profile
@@ -350,6 +369,52 @@ jobs:
 
               echo ""
               echo "PASS: AutoFDO-optimized nginx verified"
+            '
+
+      - name: Download baseline RPMs for benchmark comparison
+        uses: actions/download-artifact@v4
+        with:
+          name: baseline-rpms
+          path: baseline-rpms/
+
+      - name: Benchmark AutoFDO vs Baseline
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/output:/autofdo-rpms \
+            -v ${{ github.workspace }}/baseline-rpms:/baseline-rpms \
+            ${{ env.TOOLS_IMAGE }} bash -ce '
+              echo "=========================================="
+              echo "=== AUTOFDO-OPTIMIZED BENCHMARK         ==="
+              echo "=========================================="
+              rpm -ivh --nodeps /autofdo-rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -5
+              /usr/local/sbin/nginx
+              sleep 1
+              ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+              for run in 1 2 3; do
+                echo ""
+                echo "--- AutoFDO benchmark run ${run}/3 ---"
+                ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+
+              echo ""
+              echo "=========================================="
+              echo "=== BASELINE BENCHMARK (for comparison) ==="
+              echo "=========================================="
+              # Remove AutoFDO RPM, install baseline
+              rpm -e --nodeps $(rpm -qa | grep centminmod-nginx) 2>/dev/null || true
+              rpm -ivh --nodeps /baseline-rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -5
+              /usr/local/sbin/nginx
+              sleep 1
+              ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+              for run in 1 2 3; do
+                echo ""
+                echo "--- Baseline benchmark run ${run}/3 ---"
+                ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              echo ""
+              echo "=== Benchmark comparison complete — compare Requests/sec above ==="
             '
 
       - name: Upload AutoFDO RPM artifacts

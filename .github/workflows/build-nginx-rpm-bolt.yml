@@ -278,6 +278,25 @@ jobs:
               cp /usr/local/sbin/nginx /profiles/nginx.original
               echo ""
               echo "Saved original binary: $(ls -lh /profiles/nginx.original)"
+
+              # === BASELINE BENCHMARK ===
+              echo ""
+              echo "=========================================="
+              echo "=== BASELINE BENCHMARK (before BOLT)   ==="
+              echo "=========================================="
+              /usr/local/sbin/nginx
+              sleep 1
+              # Warmup
+              ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+              # Benchmark runs
+              for run in 1 2 3; do
+                echo ""
+                echo "--- Baseline benchmark run ${run}/3 ---"
+                ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              echo ""
+              echo "=== Baseline benchmark complete ==="
             '
 
       - name: Upload BOLT profile + binary
@@ -408,15 +427,45 @@ jobs:
               echo ":: nginx -t ::"
               /usr/local/sbin/nginx -t 2>&1
 
+              # === BOLT-OPTIMIZED BENCHMARK ===
               echo ""
-              echo ":: Quick smoke test — start/stop ::"
+              echo "=========================================="
+              echo "=== BOLT-OPTIMIZED BENCHMARK            ==="
+              echo "=========================================="
               /usr/local/sbin/nginx 2>&1
               sleep 1
-              curl -sI http://127.0.0.1:80/ 2>&1 | head -3 || ab -n 1 -c 1 http://127.0.0.1:80/ 2>&1 | tail -3
+              # Warmup
+              ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+              # Benchmark runs
+              for run in 1 2 3; do
+                echo ""
+                echo "--- BOLT benchmark run ${run}/3 ---"
+                ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
               /usr/local/sbin/nginx -s quit 2>/dev/null || true
 
               echo ""
-              echo "PASS: BOLT-optimized nginx runs successfully"
+              echo "PASS: BOLT-optimized nginx benchmark complete"
+
+              # Also run baseline benchmark for side-by-side comparison
+              echo ""
+              echo "=========================================="
+              echo "=== BASELINE BENCHMARK (for comparison) ==="
+              echo "=========================================="
+              # Restore original binary
+              cp /profiles/nginx.original /usr/local/sbin/nginx
+              chmod 755 /usr/local/sbin/nginx
+              /usr/local/sbin/nginx 2>&1
+              sleep 1
+              ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+              for run in 1 2 3; do
+                echo ""
+                echo "--- Baseline benchmark run ${run}/3 ---"
+                ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              echo ""
+              echo "=== Benchmark comparison complete — compare Requests/sec above ==="
 
               # Copy baseline RPMs + BOLT binary to output
               cp /rpms/*.rpm /output/
