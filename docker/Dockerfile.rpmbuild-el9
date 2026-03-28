@@ -37,6 +37,7 @@ ZLIB=${ZLIB:-system} && \
 LTO=${LTO:-n} && \
 MARCH=${MARCH:-generic} && \
 LINKER=${LINKER:-default} && \
+AUTOFDO=${AUTOFDO:-} && \
 if [ \"$LTO\" = \"y\" ]; then BUILD_INFO=\"${BUILD_INFO}-lto\"; fi && \
 if [ \"$MARCH\" != \"generic\" ]; then BUILD_INFO=\"${BUILD_INFO}-${MARCH}\"; fi && \
 if [ \"$LINKER\" != \"default\" ]; then BUILD_INFO=\"${BUILD_INFO}-${LINKER}\"; fi && \
@@ -49,7 +50,7 @@ if [ \"$CRYPTO\" = \"awslc\" ]; then ln -sf /home/builder/contrib/tarballs/aws-l
 if [ \"$CRYPTO\" = \"openssl\" ]; then ln -sf /home/builder/contrib/tarballs/openssl-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
 if [ \"$ZLIB\" = \"cloudflare\" ]; then ln -sf /home/builder/contrib/tarballs/zlib-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
 cd /home/builder/rpmbuild/SPECS && \
-make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO} MARCH=${MARCH} LINKER=${LINKER} nginx.spec && \
+make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO} MARCH=${MARCH} LINKER=${LINKER} AUTOFDO=${AUTOFDO} nginx.spec && \
 rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && \
 find ../RPMS ../SRPMS -name '*.rpm' -exec cp -v {} /output/ \\; && \
 echo 'Build complete. RPMs:' && ls -lh /output/"]

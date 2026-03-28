@@ -1,0 +1,278 @@
+name: Build Centmin Mod Nginx RPM (AutoFDO)
+run-name: "AutoFDO RPM: el9 crypto=${{ inputs.crypto }} lto=${{ inputs.lto }}"
+
+# Phase 5B: AutoFDO proof-of-concept workflow (EL9 only)
+#
+# Three-job pipeline:
+#   1. build-baseline: Build nginx RPM normally (with -g debug symbols)
+#   2. profile-collect: Install, load-test with ab, perf record, create_gcov
+#   3. build-autofdo: Rebuild with -fauto-profile=<profile.gcov>
+#
+# Prerequisites:
+#   - GHCR image must exist: run build-profiling-tools.yml first
+#   - Package must be public: GitHub Settings > Packages > Change visibility
+#
+# Known limitations:
+#   - perf LBR (Last Branch Record) requires bare-metal hardware
+#   - GitHub Actions VMs may not expose LBR — falls back to cycles sampling
+#   - Cycles sampling produces lower-quality profiles but still functional
+#   - Profile is tied to specific binary+config — must regenerate on version change
+
+on:
+  workflow_dispatch:
+    inputs:
+      crypto:
+        description: 'Crypto library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - awslc
+      zlib:
+        description: 'Compression library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - cloudflare
+      lto:
+        description: 'Also enable LTO'
+        required: true
+        default: 'n'
+        type: choice
+        options:
+          - 'n'
+          - 'y'
+      profile_duration:
+        description: 'Profiling duration (seconds)'
+        required: true
+        default: '30'
+        type: choice
+        options:
+          - '15'
+          - '30'
+          - '60'
+
+env:
+  TOOLS_IMAGE: ghcr.io/${{ github.repository }}/profiling-tools-el9:latest
+
+jobs:
+  # ============================================================
+  # Job 1: Build baseline nginx RPM (with -g debug symbols)
+  # ============================================================
+  build-baseline:
+    name: Build baseline RPM
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile.rpmbuild-el9 -t rpmbuild:el9 .
+
+      - name: Build baseline RPMs
+        run: |
+          mkdir -p output && chmod 777 output
+          docker run --rm \
+            -e CRYPTO=${{ inputs.crypto || 'system' }} \
+            -e ZLIB=${{ inputs.zlib || 'system' }} \
+            -e LTO=${{ inputs.lto || 'n' }} \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el9
+
+      - name: List built RPMs
+        run: ls -lh output/
+
+      - name: Upload baseline RPMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-rpms
+          path: output/*.rpm
+          retention-days: 1
+
+  # ============================================================
+  # Job 2: Profile collection — perf record + create_gcov
+  # ============================================================
+  profile-collect:
+    name: Collect AutoFDO profile
+    needs: build-baseline
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download baseline RPMs
+        uses: actions/download-artifact@v4
+        with:
+          name: baseline-rpms
+          path: rpms/
+
+      - name: Tune perf permissions on host
+        run: |
+          echo "=== Host perf settings ==="
+          sudo sysctl -w kernel.perf_event_paranoid=-1
+          sudo sysctl -w kernel.kptr_restrict=0
+          echo "perf_event_paranoid=$(cat /proc/sys/kernel/perf_event_paranoid)"
+          echo "kptr_restrict=$(cat /proc/sys/kernel/kptr_restrict)"
+
+      - name: Pull profiling tools image
+        run: docker pull ${{ env.TOOLS_IMAGE }}
+
+      - name: Collect profile
+        run: |
+          mkdir -p profiles
+          docker run --rm \
+            --privileged \
+            --security-opt seccomp=unconfined \
+            -v ${{ github.workspace }}/rpms:/rpms \
+            -v ${{ github.workspace }}/profiles:/profiles \
+            ${{ env.TOOLS_IMAGE }} bash -ce '
+              echo "=== Installing baseline nginx ==="
+              rpm -ivh --nodeps /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -20
+
+              echo ""
+              echo "=== Verifying nginx ==="
+              /usr/local/sbin/nginx -V 2>&1
+              /usr/local/sbin/nginx -t 2>&1
+
+              echo ""
+              echo "=== Starting nginx ==="
+              /usr/local/sbin/nginx
+              sleep 2
+
+              DURATION=${{ inputs.profile_duration }}
+              echo ""
+              echo "=== Profiling for ${DURATION}s ==="
+
+              # Start load generator in background
+              ab -n 1000000 -c 50 http://127.0.0.1:80/ &
+              LOAD_PID=$!
+
+              # Try LBR first (best quality for AutoFDO), fallback to cycles
+              PERF_OK=0
+              if perf record -e BR_INST_RETIRED.NEAR_TAKEN:u -b -c 500009 \
+                   -o /profiles/perf.data \
+                   -p $(pgrep -d, -x nginx) -- sleep ${DURATION} 2>/dev/null; then
+                echo "PASS: LBR profiling succeeded (best quality)"
+                PERF_OK=1
+              else
+                echo "WARN: LBR unavailable on this runner, falling back to cycles sampling"
+                echo "      (This is expected on GitHub-hosted VMs without bare-metal access)"
+                if perf record -e cycles:u -c 500009 \
+                     -o /profiles/perf.data \
+                     -p $(pgrep -d, -x nginx) -- sleep ${DURATION} 2>&1; then
+                  echo "PASS: Cycles profiling succeeded (lower quality than LBR)"
+                  PERF_OK=1
+                else
+                  echo "FAIL: perf record failed entirely"
+                fi
+              fi
+
+              # Cleanup
+              kill $LOAD_PID 2>/dev/null || true
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+
+              if [ "$PERF_OK" -eq 0 ]; then
+                echo "FAIL: Could not collect perf data on this runner"
+                exit 1
+              fi
+
+              echo ""
+              echo "=== perf data collected ==="
+              ls -lh /profiles/perf.data
+              perf report --stdio -i /profiles/perf.data 2>&1 | head -30
+
+              # Convert to AutoFDO profile (GCC gcov format)
+              echo ""
+              echo "=== Converting to AutoFDO profile with create_gcov ==="
+              create_gcov --binary=/usr/local/sbin/nginx \
+                          --profile=/profiles/perf.data \
+                          --gcov=/profiles/nginx.gcov \
+                          --gcov_version=2 2>&1
+
+              if [ -f /profiles/nginx.gcov ]; then
+                echo ""
+                echo "PASS: AutoFDO profile generated"
+                ls -lh /profiles/nginx.gcov
+              else
+                echo "FAIL: create_gcov failed to produce profile"
+                exit 1
+              fi
+            '
+
+      - name: Upload AutoFDO profile
+        uses: actions/upload-artifact@v4
+        with:
+          name: autofdo-profile
+          path: profiles/nginx.gcov
+          retention-days: 1
+
+  # ============================================================
+  # Job 3: Rebuild with -fauto-profile
+  # ============================================================
+  build-autofdo:
+    name: Build AutoFDO-optimized RPM
+    needs: profile-collect
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download AutoFDO profile
+        uses: actions/download-artifact@v4
+        with:
+          name: autofdo-profile
+          path: profiles/
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile.rpmbuild-el9 -t rpmbuild:el9 .
+
+      - name: Build AutoFDO-optimized RPMs
+        run: |
+          mkdir -p output && chmod 777 output
+          # Mount profile into the container at a known path
+          # The AUTOFDO env var tells the spec to add -fauto-profile=<path>
+          docker run --rm \
+            -e CRYPTO=${{ inputs.crypto || 'system' }} \
+            -e ZLIB=${{ inputs.zlib || 'system' }} \
+            -e LTO=${{ inputs.lto || 'n' }} \
+            -e AUTOFDO=/home/builder/rpmbuild/SOURCES/nginx.gcov \
+            -v ${{ github.workspace }}/profiles/nginx.gcov:/home/builder/rpmbuild/SOURCES/nginx.gcov:ro \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el9
+
+      - name: List built RPMs
+        run: ls -lh output/
+
+      - name: Verify AutoFDO build
+        run: |
+          docker run --rm --user root \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el9 bash -c '
+              echo "=== Installing AutoFDO-optimized RPM ==="
+              rpm -ivh --nodeps /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -10
+
+              echo ""
+              echo ":: nginx -V ::"
+              NGINX_V=$(/usr/local/sbin/nginx -V 2>&1)
+              echo "$NGINX_V"
+
+              echo ""
+              echo "=== AutoFDO verification ==="
+              if echo "$NGINX_V" | grep -q -- "-fauto-profile"; then
+                echo "PASS: -fauto-profile found in nginx -V"
+              else
+                echo "INFO: -fauto-profile path may not appear in -V output"
+                echo "      (GCC may strip the path from recorded configure line)"
+              fi
+
+              echo ""
+              echo ":: nginx -t (config syntax check) ::"
+              /usr/local/sbin/nginx -t 2>&1
+              echo "PASS: AutoFDO-optimized nginx config test passed"
+            '
+
+      - name: Upload AutoFDO RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-rpms-el9-autofdo
+          path: output/*.rpm

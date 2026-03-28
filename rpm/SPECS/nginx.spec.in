@@ -7,6 +7,7 @@
 %define opt_lto %%LTO%%
 %define opt_march %%MARCH%%
 %define opt_linker %%LINKER%%
+%define opt_autofdo %%AUTOFDO%%
 
 # Centmin Mod path macros — NEVER redefine global RPM macros (%{_libdir} etc.)
 %global cm_prefix       /usr/local/nginx
@@ -129,6 +130,14 @@ BuildRequires: mold
 %define LINKER_LD_OPT -fuse-ld=mold
 %else
 %define LINKER_LD_OPT %{nil}
+%endif
+
+# AutoFDO — compile-time profile-guided optimization
+# -fauto-profile goes in --with-cc-opt ONLY (compile-time flag, not linker)
+%if "%{opt_autofdo}" != ""
+%define AUTOFDO_CC_OPT -fauto-profile=%{opt_autofdo}
+%else
+%define AUTOFDO_CC_OPT %{nil}
 %endif
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
@@ -276,14 +285,14 @@ echo "AWS-LC built and installed to %{bdir}/nginx-dep"
 %endif
 
 ./configure %{BASE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
-    --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT}" \
+    --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT} %{AUTOFDO_CC_OPT}" \
     --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %{LTO_LD_OPT} %{LINKER_LD_OPT}" \
     --with-debug
 make %{?_smp_mflags}
 %{__mv} %{bdir}/objs/nginx \
     %{bdir}/objs/nginx-debug
 ./configure %{BASE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
-    --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT}" \
+    --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT} %{AUTOFDO_CC_OPT}" \
     --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %{LTO_LD_OPT} %{LINKER_LD_OPT}"
 make %{?_smp_mflags}
 

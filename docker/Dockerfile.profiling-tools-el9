@@ -1,0 +1,110 @@
+# Multi-stage build: BOLT tools + AutoFDO tools + slim runtime
+# Build once, push to GHCR, reuse in BOLT/AutoFDO workflows
+#
+# Usage:
+#   docker build -f docker/Dockerfile.profiling-tools-el9 -t profiling-tools-el9 .
+#   docker push ghcr.io/centminmod/pkg-oss/profiling-tools-el9:latest
+#
+# Tools included:
+#   - llvm-bolt (LLVM BOLT binary optimizer)
+#   - perf2bolt (symlink to llvm-bolt — converts perf data to BOLT format)
+#   - merge-fdata (merges BOLT profile data files)
+#   - create_gcov (google/autofdo — converts perf data to GCC AutoFDO format)
+#   - perf (Linux perf profiling tool)
+#   - ab (Apache Bench — HTTP load generator)
+
+# ============================================================
+# Stage 1: Build BOLT from LLVM source
+# ============================================================
+FROM almalinux:9 AS bolt-builder
+
+RUN dnf -y groupinstall 'Development Tools' && \
+    dnf -y install epel-release && \
+    /usr/bin/crb enable && \
+    dnf -y install cmake ninja-build python3 git \
+    gcc-toolset-15-gcc gcc-toolset-15-gcc-c++ && \
+    dnf clean all
+
+# Clone LLVM (shallow, specific release tag)
+RUN git clone --depth 1 --branch llvmorg-19.1.7 \
+    https://github.com/llvm/llvm-project.git /tmp/llvm-project
+
+# Build BOLT only — minimal config for fastest build (~8-12 min)
+# Flags verified via BOLT README (context7) + dual-AI review:
+#   -DLLVM_ENABLE_PROJECTS="bolt" — build only BOLT, not all of LLVM
+#   -DLLVM_TARGETS_TO_BUILD="X86" — skip AArch64/RISCV (saves significant time)
+#   -DLLVM_INCLUDE_TESTS/EXAMPLES/BENCHMARKS=OFF — skip test infrastructure
+#   -DLLVM_ENABLE_ASSERTIONS=OFF — release mode (smaller binary)
+RUN source /opt/rh/gcc-toolset-15/enable && \
+    cmake -G Ninja -S /tmp/llvm-project/llvm -B /tmp/bolt-build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DLLVM_ENABLE_PROJECTS="bolt" \
+      -DLLVM_TARGETS_TO_BUILD="X86" \
+      -DLLVM_INCLUDE_TESTS=OFF \
+      -DLLVM_INCLUDE_EXAMPLES=OFF \
+      -DLLVM_INCLUDE_BENCHMARKS=OFF \
+      -DLLVM_BUILD_TESTS=OFF \
+      -DLLVM_BUILD_DOCS=OFF \
+      -DLLVM_ENABLE_ASSERTIONS=OFF && \
+    ninja -C /tmp/bolt-build llvm-bolt merge-fdata && \
+    strip /tmp/bolt-build/bin/llvm-bolt /tmp/bolt-build/bin/merge-fdata
+
+# ============================================================
+# Stage 2: Build create_gcov from google/autofdo
+# ============================================================
+FROM almalinux:9 AS autofdo-builder
+
+RUN dnf -y groupinstall 'Development Tools' && \
+    dnf -y install epel-release && \
+    /usr/bin/crb enable && \
+    dnf -y install git cmake clang clang-devel llvm-devel \
+    protobuf-devel protobuf-compiler \
+    libelf-devel libunwind-devel zstd libzstd-devel \
+    openssl-devel && \
+    dnf clean all
+
+# Build create_gcov from google/autofdo
+# -DBUILD_SHARED=On is REQUIRED on CentOS 9 / AlmaLinux 9 (per AutoFDO README)
+# -DENABLE_TOOL=GCOV selects create_gcov (GCC format), not create_llvm_prof (LLVM format)
+# Requires clang as compiler (per AutoFDO README)
+RUN git clone --recursive --depth 1 https://github.com/google/autofdo.git /tmp/autofdo && \
+    cd /tmp/autofdo && mkdir build && cd build && \
+    cmake -DENABLE_TOOL=GCOV \
+          -DCMAKE_C_COMPILER=clang \
+          -DCMAKE_CXX_COMPILER=clang++ \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_SHARED=On .. && \
+    make -j$(nproc) create_gcov && \
+    strip create_gcov
+
+# ============================================================
+# Stage 3: Slim runtime image with just the tools
+# ============================================================
+FROM almalinux:9
+
+RUN dnf -y install epel-release && \
+    /usr/bin/crb enable && \
+    dnf -y install perf procps-ng httpd-tools \
+    libelf libunwind zstd protobuf openssl-libs \
+    pcre2 zlib && \
+    dnf clean all
+
+# Copy BOLT tools
+COPY --from=bolt-builder /tmp/bolt-build/bin/llvm-bolt /usr/local/bin/
+COPY --from=bolt-builder /tmp/bolt-build/bin/merge-fdata /usr/local/bin/
+# perf2bolt is a symlink to llvm-bolt (confirmed by LLVM source + dual-AI review)
+RUN ln -s /usr/local/bin/llvm-bolt /usr/local/bin/perf2bolt
+
+# Copy AutoFDO tools
+COPY --from=autofdo-builder /tmp/autofdo/build/create_gcov /usr/local/bin/
+
+# Create dirs for nginx runtime (needed when installing nginx RPM for profiling)
+RUN mkdir -p /var/cache/nginx /usr/local/nginx/logs /usr/local/nginx/conf && \
+    useradd -r -s /sbin/nologin nginx
+
+# Verify tools work
+RUN llvm-bolt --version && \
+    perf2bolt --help 2>&1 | head -3 && \
+    create_gcov --help 2>&1 | head -3 || true
+
+WORKDIR /workspace

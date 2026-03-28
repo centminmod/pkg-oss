@@ -1,0 +1,291 @@
+name: Build Centmin Mod Nginx RPM (BOLT)
+run-name: "BOLT RPM: el9 crypto=${{ inputs.crypto }} lto=${{ inputs.lto }}"
+
+# Phase 5C: BOLT (Binary Optimization and Layout Tool) proof-of-concept (EL9 only)
+#
+# Two-job pipeline:
+#   1. build-and-profile: Build nginx RPM, install, load-test, perf record, perf2bolt
+#   2. bolt-optimize: Apply llvm-bolt to the binary, verify it works
+#
+# BOLT is a post-link optimizer — it rewrites the binary for better code layout
+# without recompilation. No spec file changes needed.
+#
+# Prerequisites:
+#   - GHCR image must exist: run build-profiling-tools.yml first
+#   - Package must be public: GitHub Settings > Packages > Change visibility
+#
+# Known limitations:
+#   - BOLT works best with LBR branch data (perf record -j any,u)
+#   - Falls back to -nl (no LBR) mode if branch info unavailable
+#   - Expected gains: 2-15% from code layout optimization (CPU-bound workloads)
+#
+# BOLT flags (from BOLT README):
+#   -reorder-blocks=ext-tsp: Extended TSP block reordering
+#   -reorder-functions=hfsort: Hot-function sorting
+#   -split-functions: Split hot/cold function parts
+#   -split-all-cold: Aggressively split cold code
+#   -split-eh: Split exception handling code
+#   -dyno-stats: Print optimization statistics
+
+on:
+  workflow_dispatch:
+    inputs:
+      crypto:
+        description: 'Crypto library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - awslc
+      zlib:
+        description: 'Compression library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - cloudflare
+      lto:
+        description: 'Also enable LTO'
+        required: true
+        default: 'n'
+        type: choice
+        options:
+          - 'n'
+          - 'y'
+      profile_duration:
+        description: 'Profiling duration (seconds)'
+        required: true
+        default: '30'
+        type: choice
+        options:
+          - '15'
+          - '30'
+          - '60'
+
+env:
+  TOOLS_IMAGE: ghcr.io/${{ github.repository }}/profiling-tools-el9:latest
+
+jobs:
+  # ============================================================
+  # Job 1: Build baseline RPM + collect perf profile for BOLT
+  # ============================================================
+  build-and-profile:
+    name: Build + Profile
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build rpmbuild Docker image
+        run: docker build -f docker/Dockerfile.rpmbuild-el9 -t rpmbuild:el9 .
+
+      - name: Build baseline RPMs
+        run: |
+          mkdir -p output && chmod 777 output
+          docker run --rm \
+            -e CRYPTO=${{ inputs.crypto || 'system' }} \
+            -e ZLIB=${{ inputs.zlib || 'system' }} \
+            -e LTO=${{ inputs.lto || 'n' }} \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el9
+
+      - name: List built RPMs
+        run: ls -lh output/
+
+      - name: Tune perf permissions on host
+        run: |
+          sudo sysctl -w kernel.perf_event_paranoid=-1
+          sudo sysctl -w kernel.kptr_restrict=0
+
+      - name: Pull profiling tools image
+        run: docker pull ${{ env.TOOLS_IMAGE }}
+
+      - name: Collect perf profile for BOLT
+        run: |
+          mkdir -p profiles
+          docker run --rm \
+            --privileged \
+            --security-opt seccomp=unconfined \
+            -v ${{ github.workspace }}/output:/rpms \
+            -v ${{ github.workspace }}/profiles:/profiles \
+            ${{ env.TOOLS_IMAGE }} bash -ce '
+              echo "=== Installing baseline nginx ==="
+              rpm -ivh --nodeps /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -20
+
+              echo ""
+              /usr/local/sbin/nginx -V 2>&1
+              /usr/local/sbin/nginx -t 2>&1
+
+              echo ""
+              echo "=== Starting nginx ==="
+              /usr/local/sbin/nginx
+              sleep 2
+
+              DURATION=${{ inputs.profile_duration }}
+              echo ""
+              echo "=== BOLT profiling for ${DURATION}s ==="
+
+              # Start load generator
+              ab -n 1000000 -c 50 http://127.0.0.1:80/ &
+              LOAD_PID=$!
+
+              # BOLT docs recommend: perf record -e cycles:u -j any,u
+              # -j any,u captures branch info (LBR if available)
+              PERF_OK=0
+              if perf record -e cycles:u -j any,u -o /profiles/perf.data \
+                   -p $(pgrep -d, -x nginx) -- sleep ${DURATION} 2>&1; then
+                echo "PASS: perf record with branch info succeeded"
+                PERF_OK=1
+              else
+                echo "WARN: -j any,u failed, retrying without branch info"
+                if perf record -e cycles:u -o /profiles/perf.data \
+                     -p $(pgrep -d, -x nginx) -- sleep ${DURATION} 2>&1; then
+                  echo "PASS: perf record without branch info succeeded"
+                  echo "      (perf2bolt will use -nl mode)"
+                  PERF_OK=1
+                fi
+              fi
+
+              kill $LOAD_PID 2>/dev/null || true
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+
+              if [ "$PERF_OK" -eq 0 ]; then
+                echo "FAIL: perf record failed entirely"
+                exit 1
+              fi
+
+              echo ""
+              ls -lh /profiles/perf.data
+
+              # Convert to BOLT format using perf2bolt
+              # Try with LBR first, fallback to -nl (no LBR) mode
+              echo ""
+              echo "=== Converting with perf2bolt ==="
+              if ! perf2bolt /usr/local/sbin/nginx \
+                     -p /profiles/perf.data \
+                     -o /profiles/nginx.fdata 2>&1; then
+                echo "WARN: perf2bolt failed, retrying with -nl (no LBR) flag"
+                perf2bolt /usr/local/sbin/nginx \
+                  -p /profiles/perf.data \
+                  -o /profiles/nginx.fdata -nl 2>&1 || {
+                  echo "FAIL: perf2bolt failed even with -nl"
+                  exit 1
+                }
+              fi
+
+              if [ -f /profiles/nginx.fdata ]; then
+                echo ""
+                echo "PASS: BOLT profile generated"
+                ls -lh /profiles/nginx.fdata
+              else
+                echo "FAIL: nginx.fdata not created"
+                exit 1
+              fi
+
+              # Save original binary for BOLT optimization in job 2
+              cp /usr/local/sbin/nginx /profiles/nginx.original
+              echo "Saved original binary: $(ls -lh /profiles/nginx.original)"
+            '
+
+      - name: Upload BOLT profile + binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: bolt-profile
+          path: |
+            profiles/nginx.fdata
+            profiles/nginx.original
+
+      - name: Upload baseline RPMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-rpms-bolt
+          path: output/*.rpm
+          retention-days: 1
+
+  # ============================================================
+  # Job 2: Apply BOLT optimization to the binary
+  # ============================================================
+  bolt-optimize:
+    name: BOLT optimize
+    needs: build-and-profile
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download BOLT profile + binary
+        uses: actions/download-artifact@v4
+        with:
+          name: bolt-profile
+          path: profiles/
+
+      - name: Download baseline RPMs
+        uses: actions/download-artifact@v4
+        with:
+          name: baseline-rpms-bolt
+          path: rpms/
+
+      - name: Pull profiling tools image
+        run: docker pull ${{ env.TOOLS_IMAGE }}
+
+      - name: Apply BOLT optimization
+        run: |
+          mkdir -p output
+          docker run --rm \
+            -v ${{ github.workspace }}/profiles:/profiles \
+            -v ${{ github.workspace }}/rpms:/rpms \
+            -v ${{ github.workspace }}/output:/output \
+            ${{ env.TOOLS_IMAGE }} bash -ce '
+              echo "=== Applying BOLT optimization ==="
+              echo "Flags: -reorder-blocks=ext-tsp -reorder-functions=hfsort"
+              echo "       -split-functions -split-all-cold -split-eh -dyno-stats"
+              echo ""
+
+              # Apply BOLT with recommended flags from BOLT README
+              llvm-bolt /profiles/nginx.original \
+                -o /output/nginx.bolt \
+                -data=/profiles/nginx.fdata \
+                -reorder-blocks=ext-tsp \
+                -reorder-functions=hfsort \
+                -split-functions \
+                -split-all-cold \
+                -split-eh \
+                -dyno-stats 2>&1
+
+              if [ -f /output/nginx.bolt ]; then
+                echo ""
+                echo "PASS: BOLT-optimized binary produced"
+                ORIG_SIZE=$(stat -c%s /profiles/nginx.original)
+                BOLT_SIZE=$(stat -c%s /output/nginx.bolt)
+                echo "  Original: ${ORIG_SIZE} bytes ($(echo "scale=1; ${ORIG_SIZE}/1048576" | bc)MB)"
+                echo "  BOLT:     ${BOLT_SIZE} bytes ($(echo "scale=1; ${BOLT_SIZE}/1048576" | bc)MB)"
+              else
+                echo "FAIL: llvm-bolt failed to produce optimized binary"
+                exit 1
+              fi
+
+              echo ""
+              echo "=== Verifying BOLT-optimized nginx ==="
+              # Install baseline RPM to get config files, then replace binary
+              rpm -ivh --nodeps /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -10
+              cp /output/nginx.bolt /usr/local/sbin/nginx
+              chmod 755 /usr/local/sbin/nginx
+
+              echo ""
+              echo ":: nginx -V ::"
+              /usr/local/sbin/nginx -V 2>&1
+
+              echo ""
+              echo ":: nginx -t ::"
+              /usr/local/sbin/nginx -t 2>&1
+              echo ""
+              echo "PASS: BOLT-optimized nginx runs successfully"
+
+              # Copy baseline RPMs + BOLT binary to output
+              cp /rpms/*.rpm /output/
+            '
+
+      - name: Upload BOLT artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-rpms-el9-bolt
+          path: output/*

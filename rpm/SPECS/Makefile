@@ -103,6 +103,10 @@ MARCH?=	generic
 # Options: default, mold
 LINKER?=	default
 
+# AutoFDO profile path (set to profile file path to enable)
+# Usage: make AUTOFDO=/path/to/profile.gcov nginx.spec
+AUTOFDO?=
+
 BASE_CONFIGURE_ARGS=\
 	--build=$(BUILD_INFO) \
 	--prefix=/usr/local/nginx \
@@ -216,7 +220,7 @@ ifeq ($(BASE_TARGET), plus)
 	cp -v $(DOCS)/EULA* $(SRCPATH)
 	cp -v $(DOCS)/CHANGES $(SRCPATH)
 endif
-	@echo "===> Creating $@ (CRYPTO=$(CRYPTO), ZLIB=$(ZLIB), LTO=$(LTO), MARCH=$(MARCH), LINKER=$(LINKER))"
+	@echo "===> Creating $@ (CRYPTO=$(CRYPTO), ZLIB=$(ZLIB), LTO=$(LTO), MARCH=$(MARCH), LINKER=$(LINKER)$(if $(AUTOFDO), AUTOFDO=$(AUTOFDO)))"
 	@{ \
 	set -e ; \
 	cp -p $(DOCS)/nginx.copyright $(SRCPATH) ; \
@@ -290,6 +294,7 @@ endif
 		-e 's#%%LTO%%#$(LTO)#g' \
 		-e 's#%%MARCH%%#$(MARCH)#g' \
 		-e 's#%%LINKER%%#$(LINKER)#g' \
+		-e 's#%%AUTOFDO%%#$(AUTOFDO)#g' \
 		> nginx$(BASE_SUFFIX).spec ; \
 	sed nginx$(BASE_SUFFIX).rpm-changelog \
 		-e 's#%%BASE_VERSION%%#$(BASE_VERSION)#g' \
@@ -403,6 +408,7 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e 's#%%LTO%%#$(LTO)#g' \
 		-e 's#%%MARCH%%#$(MARCH)#g' \
 		-e 's#%%LINKER%%#$(LINKER)#g' \
+		-e 's#%%AUTOFDO%%#$(AUTOFDO)#g' \
 		-e "s#%%COPYRIGHT_SOURCE%%#$${module_copyright}#g" \
 		-e "s#%%MODULE_SOURCES%%#$${sources}#g" \
 		-e "s#%%MODULE_PATCHES%%#$${patches}#g" \
