@@ -1,4 +1,5 @@
 name: Build Centmin Mod Nginx RPM (Optimized)
+run-name: "Optimized RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }} lto=${{ inputs.lto }} march=${{ inputs.march }} linker=${{ inputs.linker }}"
 
 on:
   workflow_dispatch:
