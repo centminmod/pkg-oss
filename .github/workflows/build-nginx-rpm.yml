@@ -1,4 +1,5 @@
 name: Build Centmin Mod Nginx RPM
+run-name: "Build RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }}"
 
 on:
   workflow_dispatch:
