@@ -95,21 +95,53 @@ COPY --from=bolt-builder /tmp/bolt-build/bin/merge-fdata /usr/local/bin/
 # perf2bolt is a symlink to llvm-bolt (confirmed by LLVM source + dual-AI review)
 RUN ln -s /usr/local/bin/llvm-bolt /usr/local/bin/perf2bolt
 
-# Copy AutoFDO tools + shared libs built by autofdo (libglog from submodule)
+# Copy AutoFDO tools + shared libs built by autofdo
 COPY --from=autofdo-builder /tmp/autofdo/build/create_gcov /usr/local/bin/
-COPY --from=autofdo-builder /tmp/autofdo/build/third_party/glog/ /usr/local/lib64/autofdo-libs/
-RUN ln -sf /usr/local/lib64/autofdo-libs/libglog.so /usr/local/lib64/libglog.so.1 && \
-    ln -sf /usr/local/lib64/autofdo-libs/libglog.so /usr/local/lib64/libglog.so && \
-    echo "/usr/local/lib64" > /etc/ld.so.conf.d/autofdo.conf && ldconfig
+
+# Debug: inspect what libs create_gcov needs and what autofdo built
+RUN echo "=== DEBUG: ldd create_gcov ===" && \
+    ldd /usr/local/bin/create_gcov 2>&1 || true && \
+    echo ""
+
+# Copy all shared libs from autofdo build that create_gcov might need
+COPY --from=autofdo-builder /tmp/autofdo/build/third_party/ /tmp/autofdo-libs/
+
+RUN echo "=== DEBUG: autofdo third_party build artifacts ===" && \
+    find /tmp/autofdo-libs -name "*.so*" -o -name "*.a" 2>/dev/null | sort && \
+    echo "" && \
+    echo "=== DEBUG: autofdo glog dir ===" && \
+    ls -la /tmp/autofdo-libs/glog/ 2>/dev/null || echo "no glog dir" && \
+    echo "" && \
+    echo "=== DEBUG: all libglog files ===" && \
+    find /tmp/autofdo-libs -name "libglog*" 2>/dev/null | while read f; do \
+      echo "$f -> $(file "$f" 2>/dev/null)" ; \
+    done && \
+    echo "" && \
+    # Copy any glog .so files to /usr/local/lib64
+    find /tmp/autofdo-libs -name "libglog*.so*" -exec cp -v {} /usr/local/lib64/ \; && \
+    # Create .so.1 symlink if only .so exists
+    if [ -f /usr/local/lib64/libglog.so ] && [ ! -f /usr/local/lib64/libglog.so.1 ]; then \
+      ln -sf /usr/local/lib64/libglog.so /usr/local/lib64/libglog.so.1 ; \
+      echo "Created libglog.so.1 -> libglog.so symlink" ; \
+    fi && \
+    echo "/usr/local/lib64" > /etc/ld.so.conf.d/autofdo.conf && ldconfig && \
+    echo "" && \
+    echo "=== DEBUG: ldconfig -p | grep glog ===" && \
+    ldconfig -p | grep glog && \
+    echo "" && \
+    echo "=== DEBUG: ldd create_gcov (after fix) ===" && \
+    ldd /usr/local/bin/create_gcov 2>&1 && \
+    rm -rf /tmp/autofdo-libs
 
 # Create dirs for nginx runtime (needed when installing nginx RPM for profiling)
 RUN mkdir -p /var/cache/nginx /usr/local/nginx/logs /usr/local/nginx/conf && \
     useradd -r -s /sbin/nologin nginx
 
-# Verify tools work
-RUN llvm-bolt --version && \
+# Verify tools work — will FAIL the build if any tool is broken
+RUN echo "=== Final tool verification ===" && \
+    llvm-bolt --version && \
     perf2bolt --help 2>&1 | head -3 && \
     create_gcov --help 2>&1 | head -3 && \
-    echo "All tools verified"
+    echo "PASS: All tools verified"
 
 WORKDIR /workspace
