@@ -235,24 +235,28 @@ jobs:
                 rpm -ivh --nodeps "$rpm_file" 2>&1
               done
 
+              NGINX_BIN=/usr/local/sbin/nginx
+              MODULE_DIR=/usr/local/nginx/modules
+
               echo ""
               echo "=== nginx -V (build info) ==="
-              /usr/local/nginx/sbin/nginx -V 2>&1
+              $NGINX_BIN -V 2>&1
               echo ""
 
               # Build load_module config — NDK must load first (lua, encrypted-session, set-misc depend on it)
+              # Skip -debug.so files (only loadable by nginx-debug binary)
               MODULES_CONF=/tmp/modules-load-test.conf
               echo "# Auto-generated module load test" > "$MODULES_CONF"
-              MODULE_DIR=/usr/local/nginx/modules
 
               # NDK first (dependency for other modules)
               if [ -f "$MODULE_DIR/ndk_http_module.so" ]; then
                 echo "load_module $MODULE_DIR/ndk_http_module.so;" >> "$MODULES_CONF"
               fi
 
-              # All other modules (skip ndk — already loaded above)
+              # All other non-debug modules (skip ndk — already loaded above)
               for so in "$MODULE_DIR"/*.so; do
                 [ -f "$so" ] || continue
+                basename "$so" | grep -q "\-debug\.so$" && continue
                 basename "$so" | grep -q "^ndk_http_module.so$" && continue
                 echo "load_module $so;" >> "$MODULES_CONF"
               done
@@ -282,7 +286,7 @@ jobs:
               echo ""
               echo "=== nginx -t (module load test) ==="
               LOAD_PASS=0; LOAD_FAIL=0; FAILED_MODULES=""
-              if /usr/local/nginx/sbin/nginx -t -c "$TEST_CONF" 2>&1; then
+              if $NGINX_BIN -t -c "$TEST_CONF" 2>&1; then
                 echo ""
                 echo "PASS: All $DIRECTIVE_COUNT modules loaded successfully"
                 LOAD_PASS=$DIRECTIVE_COUNT
@@ -293,8 +297,9 @@ jobs:
                 for so in "$MODULE_DIR"/*.so; do
                   [ -f "$so" ] || continue
                   MOD_NAME=$(basename "$so")
+                  echo "$MOD_NAME" | grep -q "\-debug\.so$" && continue
                   SINGLE_CONF=/tmp/test-single.conf
-                  # NDK modules need ndk loaded first
+                  # NDK-dependent modules need ndk loaded first
                   if echo "$MOD_NAME" | grep -qE "(lua|encrypted_session|set_misc)"; then
                     echo "load_module $MODULE_DIR/ndk_http_module.so;" > "$SINGLE_CONF"
                   else
@@ -305,10 +310,11 @@ jobs:
           events { worker_connections 64; }
           http { server { listen 127.0.0.1:18080; server_name localhost; location / { return 200 ok; } } }
           NGINX_CONF2
-                  if /usr/local/nginx/sbin/nginx -t -c "$SINGLE_CONF" 2>/dev/null; then
+                  if $NGINX_BIN -t -c "$SINGLE_CONF" 2>&1; then
                     LOAD_PASS=$((LOAD_PASS+1))
                   else
                     echo "FAIL to load: $MOD_NAME"
+                    $NGINX_BIN -t -c "$SINGLE_CONF" 2>&1 || true
                     LOAD_FAIL=$((LOAD_FAIL+1))
                     FAILED_MODULES="$FAILED_MODULES $MOD_NAME"
                   fi
