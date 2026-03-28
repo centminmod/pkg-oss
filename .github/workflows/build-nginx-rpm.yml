@@ -213,8 +213,13 @@ jobs:
           '
 
       - name: Benchmark nginx
+        env:
+          BENCH_LABEL: "EL${{ matrix.el_version }} crypto=${{ inputs.crypto || 'system' }} zlib=${{ inputs.zlib || 'system' }}"
         run: |
-          docker run --rm --user root -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }} bash -c '
+          docker run --rm --user root \
+            -e BENCH_LABEL="${BENCH_LABEL}" \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ matrix.el_version }} bash -c '
             echo "=== Installing nginx for benchmark ==="
             main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
             rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -3
@@ -233,7 +238,7 @@ jobs:
             echo ""
             echo "=========================================="
             echo "=== HTTP/1.1 BENCHMARK (ab)            ==="
-            echo "=== EL${{ matrix.el_version }} crypto=${{ inputs.crypto || '\''system'\'' }} zlib=${{ inputs.zlib || '\''system'\'' }} ==="
+            echo "=== ${BENCH_LABEL} ==="
             echo "=========================================="
             ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
             for run in 1 2 3; do
@@ -245,7 +250,7 @@ jobs:
             echo ""
             echo "=========================================="
             echo "=== HTTP/2+TLS BENCHMARK (h2load)      ==="
-            echo "=== EL${{ matrix.el_version }} crypto=${{ inputs.crypto || '\''system'\'' }} zlib=${{ inputs.zlib || '\''system'\'' }} ==="
+            echo "=== ${BENCH_LABEL} ==="
             echo "=========================================="
             h2load -n 10000 -c 50 -m 10 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1
             for run in 1 2 3; do
