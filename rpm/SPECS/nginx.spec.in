@@ -135,7 +135,9 @@ BuildRequires: mold
 # AutoFDO — compile-time profile-guided optimization
 # -fauto-profile goes in --with-cc-opt ONLY (compile-time flag, not linker)
 %if "%{opt_autofdo}" != "none" && "%{opt_autofdo}" != ""
-%define AUTOFDO_CC_OPT -fauto-profile=%{opt_autofdo}
+# -Wno-error=array-bounds: AutoFDO profile-guided inlining can trigger
+# false-positive bounds warnings with -Werror (GCC bug with aggressive optimization)
+%define AUTOFDO_CC_OPT -fauto-profile=%{opt_autofdo} -Wno-error=array-bounds
 %else
 %define AUTOFDO_CC_OPT %{nil}
 %endif
