@@ -232,11 +232,11 @@ jobs:
               if [ "$PERF_MODE" = "lbr" ]; then
                 if ! perf2bolt /usr/local/sbin/nginx \
                        -p /profiles/perf.data \
-                       -o /profiles/nginx.fdata 2>&1; then
+                       -o /profiles/nginx.fdata --allow-stripped 2>&1; then
                   echo "WARN: perf2bolt with LBR failed, retrying with -nl"
                   perf2bolt /usr/local/sbin/nginx \
                     -p /profiles/perf.data \
-                    -o /profiles/nginx.fdata -nl 2>&1 || {
+                    -o /profiles/nginx.fdata -nl --allow-stripped 2>&1 || {
                     echo "FAIL: perf2bolt failed even with -nl"
                     exit 1
                   }
@@ -245,7 +245,7 @@ jobs:
                 # cycles mode — always use -nl
                 perf2bolt /usr/local/sbin/nginx \
                   -p /profiles/perf.data \
-                  -o /profiles/nginx.fdata -nl 2>&1 || {
+                  -o /profiles/nginx.fdata -nl --allow-stripped 2>&1 || {
                   echo "FAIL: perf2bolt -nl failed"
                   exit 1
                 }
@@ -336,6 +336,7 @@ jobs:
               llvm-bolt /profiles/nginx.original \
                 -o /output/nginx.bolt \
                 -data=/profiles/nginx.fdata \
+                --allow-stripped \
                 -reorder-blocks=ext-tsp \
                 -reorder-functions=hfsort \
                 -split-functions \
