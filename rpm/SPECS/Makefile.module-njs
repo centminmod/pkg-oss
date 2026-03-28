@@ -58,10 +58,8 @@ sed -i.bak 's,-lquickjs ,-lquickjs -latomic ,g' auto/quickjs \&\& \
 	--cc-opt=\"%{WITH_CC_OPT}\ -I%{bdir}/quickjs-$(QUICKJS_GITHASH)/" \
 	--ld-opt=\"%{WITH_LD_OPT}\ -L%{bdir}/quickjs-$(QUICKJS_GITHASH)/" \&\& \
 make $$_make_opts njs \&\& \
-mv build build-cli
-echo "=== Saving njs CLI binary ==="
-ls -la %{bdir}/njs-$(NJS_VERSION)/build-cli/njs || echo "WARNING: njs binary not found after build"
-cp -v %{bdir}/njs-$(NJS_VERSION)/build-cli/njs %{bdir}/njs-cli-binary || true
+mv build build-cli \&\& \
+cp -v %{bdir}/njs-$(NJS_VERSION)/build-cli/njs %{bdir}/njs-cli-binary
 endef
 export MODULE_PREBUILD_njs
 
