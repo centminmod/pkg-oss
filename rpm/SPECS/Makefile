@@ -105,7 +105,7 @@ LINKER?=	default
 
 # AutoFDO profile path (set to profile file path to enable)
 # Usage: make AUTOFDO=/path/to/profile.gcov nginx.spec
-AUTOFDO?=
+AUTOFDO?=	none
 
 BASE_CONFIGURE_ARGS=\
 	--build=$(BUILD_INFO) \
