@@ -89,6 +89,20 @@ CF_ZLIB_SHORT=
 CF_ZLIB_VERSION=
 endif
 
+# LTO (Link-Time Optimization) support
+# Usage: make LTO=y nginx.spec
+LTO?=	n
+
+# Microarchitecture targeting
+# Usage: make MARCH=x86-64-v3 nginx.spec
+# Options: generic, x86-64-v2, x86-64-v3, x86-64-v4
+MARCH?=	generic
+
+# Linker selection
+# Usage: make LINKER=mold nginx.spec
+# Options: default, mold
+LINKER?=	default
+
 BASE_CONFIGURE_ARGS=\
 	--build=$(BUILD_INFO) \
 	--prefix=/usr/local/nginx \
@@ -202,7 +216,7 @@ ifeq ($(BASE_TARGET), plus)
 	cp -v $(DOCS)/EULA* $(SRCPATH)
 	cp -v $(DOCS)/CHANGES $(SRCPATH)
 endif
-	@echo "===> Creating $@ (CRYPTO=$(CRYPTO), ZLIB=$(ZLIB))"
+	@echo "===> Creating $@ (CRYPTO=$(CRYPTO), ZLIB=$(ZLIB), LTO=$(LTO), MARCH=$(MARCH), LINKER=$(LINKER))"
 	@{ \
 	set -e ; \
 	cp -p $(DOCS)/nginx.copyright $(SRCPATH) ; \
@@ -273,6 +287,9 @@ endif
 		-e 's#%%ZLIB_CONFIGURE_ARGS%%#$(ZLIB_CONFIGURE_ARGS)#g' \
 		-e 's#%%CF_ZLIB_COMMIT%%#$(CF_ZLIB_COMMIT)#g' \
 		-e 's#%%CF_ZLIB_VERSION%%#$(CF_ZLIB_VERSION)#g' \
+		-e 's#%%LTO%%#$(LTO)#g' \
+		-e 's#%%MARCH%%#$(MARCH)#g' \
+		-e 's#%%LINKER%%#$(LINKER)#g' \
 		> nginx$(BASE_SUFFIX).spec ; \
 	sed nginx$(BASE_SUFFIX).rpm-changelog \
 		-e 's#%%BASE_VERSION%%#$(BASE_VERSION)#g' \
@@ -383,6 +400,9 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e 's#%%ZLIB_CONFIGURE_ARGS%%#$(ZLIB_CONFIGURE_ARGS)#g' \
 		-e 's#%%CF_ZLIB_COMMIT%%#$(CF_ZLIB_COMMIT)#g' \
 		-e 's#%%CF_ZLIB_VERSION%%#$(CF_ZLIB_VERSION)#g' \
+		-e 's#%%LTO%%#$(LTO)#g' \
+		-e 's#%%MARCH%%#$(MARCH)#g' \
+		-e 's#%%LINKER%%#$(LINKER)#g' \
 		-e "s#%%COPYRIGHT_SOURCE%%#$${module_copyright}#g" \
 		-e "s#%%MODULE_SOURCES%%#$${sources}#g" \
 		-e "s#%%MODULE_PATCHES%%#$${patches}#g" \

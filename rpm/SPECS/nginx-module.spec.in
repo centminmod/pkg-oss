@@ -98,8 +98,42 @@ nginx %%SHORT_SUMMARY%%.
 # No -pie for module spec — modules build .so files, not executables
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -Wl,-Bsymbolic-functions
 
+# LTO support — must match nginx.spec.in for ABI compatibility
+%if "%{opt_lto}" == "y"
+%define LTO_CC_OPT -flto=auto
+%define LTO_LD_OPT -flto=auto
+%else
+%define LTO_CC_OPT %{nil}
+%define LTO_LD_OPT %{nil}
+%endif
+
+# Microarchitecture targeting — must match nginx.spec.in
+%if "%{opt_march}" == "x86-64-v2"
+%define MARCH_CC_OPT -march=x86-64-v2
+%endif
+%if "%{opt_march}" == "x86-64-v3"
+%define MARCH_CC_OPT -march=x86-64-v3
+%endif
+%if "%{opt_march}" == "x86-64-v4"
+%define MARCH_CC_OPT -march=x86-64-v4
+%endif
+%if "%{opt_march}" == "generic"
+%define MARCH_CC_OPT %{nil}
+%endif
+
+# Mold linker — must match nginx.spec.in
+%if "%{opt_linker}" == "mold"
+%define LINKER_LD_OPT -fuse-ld=mold
+BuildRequires: mold
+%else
+%define LINKER_LD_OPT %{nil}
+%endif
+
 %define crypto_lib %%CRYPTO_NAME%%
 %define zlib_lib %%ZLIB_NAME%%
+%define opt_lto %%LTO%%
+%define opt_march %%MARCH%%
+%define opt_linker %%LINKER%%
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 %define MODULE_CONFIGURE_ARGS $(echo "%%MODULE_CONFIGURE_ARGS%%")
@@ -148,8 +182,8 @@ echo "GCC version: $(gcc --version | head -1)"
 cd %{bdir}
 %%MODULE_ENV%%
 ./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
-	--with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %%MODULE_CC_OPT_DEBUG%%" \
-	--with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %%MODULE_LD_OPT_DEBUG%%" \
+	--with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT} %%MODULE_CC_OPT_DEBUG%%" \
+	--with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %{LTO_LD_OPT} %{LINKER_LD_OPT} %%MODULE_LD_OPT_DEBUG%%" \
 	--with-debug
 make %{?_smp_mflags} modules
 for so in `find %{bdir}/objs/ -type f -name "*.so"`; do
@@ -158,8 +192,8 @@ mv $so $debugso
 done
 %%MODULE_ENV%%
 ./configure %{BASE_CONFIGURE_ARGS} %{MODULE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
-	--with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %%MODULE_CC_OPT%%" \
-	--with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %%MODULE_LD_OPT%%"
+	--with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT} %%MODULE_CC_OPT%%" \
+	--with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %{LTO_LD_OPT} %{LINKER_LD_OPT} %%MODULE_LD_OPT%%"
 make %{?_smp_mflags} modules
 
 %install

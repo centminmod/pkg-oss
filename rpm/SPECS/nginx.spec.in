@@ -3,6 +3,10 @@
 %define crypto_lib %%CRYPTO_NAME%%
 # Compression library selection (set by Makefile ZLIB variable)
 %define zlib_lib %%ZLIB_NAME%%
+# Optimization feature toggles (set by Makefile LTO/MARCH/LINKER variables)
+%define opt_lto %%LTO%%
+%define opt_march %%MARCH%%
+%define opt_linker %%LINKER%%
 
 # Centmin Mod path macros — NEVER redefine global RPM macros (%{_libdir} etc.)
 %global cm_prefix       /usr/local/nginx
@@ -75,6 +79,10 @@ BuildRequires: openssl-devel
 %define _debugsource_template %{nil}
 %endif
 
+%if "%{opt_linker}" == "mold"
+BuildRequires: mold
+%endif
+
 # end of distribution specific definitions
 
 %define base_version %%BASE_VERSION%%
@@ -92,6 +100,36 @@ BuildRequires: openssl-devel
 %define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-D_FORTIFY_SOURCE=2 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
 %endif
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -pie -Wl,--as-needed -Wl,-Bsymbolic-functions
+
+# LTO support — -flto=auto on both compile and link lines (GCC requirement)
+%if "%{opt_lto}" == "y"
+%define LTO_CC_OPT -flto=auto
+%define LTO_LD_OPT -flto=auto
+%else
+%define LTO_CC_OPT %{nil}
+%define LTO_LD_OPT %{nil}
+%endif
+
+# Microarchitecture targeting — compile-time only
+%if "%{opt_march}" == "x86-64-v2"
+%define MARCH_CC_OPT -march=x86-64-v2
+%endif
+%if "%{opt_march}" == "x86-64-v3"
+%define MARCH_CC_OPT -march=x86-64-v3
+%endif
+%if "%{opt_march}" == "x86-64-v4"
+%define MARCH_CC_OPT -march=x86-64-v4
+%endif
+%if "%{opt_march}" == "generic"
+%define MARCH_CC_OPT %{nil}
+%endif
+
+# Mold linker — link-time only
+%if "%{opt_linker}" == "mold"
+%define LINKER_LD_OPT -fuse-ld=mold
+%else
+%define LINKER_LD_OPT %{nil}
+%endif
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
 
@@ -238,15 +276,15 @@ echo "AWS-LC built and installed to %{bdir}/nginx-dep"
 %endif
 
 ./configure %{BASE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
-    --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT}" \
-    --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT}" \
+    --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT}" \
+    --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %{LTO_LD_OPT} %{LINKER_LD_OPT}" \
     --with-debug
 make %{?_smp_mflags}
 %{__mv} %{bdir}/objs/nginx \
     %{bdir}/objs/nginx-debug
 ./configure %{BASE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
-    --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT}" \
-    --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT}"
+    --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT}" \
+    --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %{LTO_LD_OPT} %{LINKER_LD_OPT}"
 make %{?_smp_mflags}
 
 %install

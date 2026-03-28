@@ -4,7 +4,7 @@ FROM almalinux:8
 RUN dnf -y groupinstall 'Development Tools' && \
     dnf -y install epel-release && \
     /usr/bin/crb enable && \
-    dnf -y install zlib-devel pcre2-devel openssl-devel systemd-devel \
+    dnf -y install zlib-devel pcre2-devel openssl-devel systemd-devel mold \
     wget tar gzip xz rpm-build rpmdevtools \
     libxml2 libxslt \
     gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ \
@@ -34,6 +34,9 @@ BUILD_OS=almalinux$(rpm -E %{rhel}) && \
 BUILD_INFO=${BUILD_DATE}-${BUILD_OS}-rpm && \
 CRYPTO=${CRYPTO:-system} && \
 ZLIB=${ZLIB:-system} && \
+LTO=${LTO:-n} && \
+MARCH=${MARCH:-generic} && \
+LINKER=${LINKER:-default} && \
 cd /home/builder/contrib && make .sum-nginx && \
 if [ \"$CRYPTO\" = \"awslc\" ]; then make .sum-awslc; fi && \
 if [ \"$CRYPTO\" = \"openssl\" ]; then make .sum-openssl; fi && \
@@ -43,7 +46,7 @@ if [ \"$CRYPTO\" = \"awslc\" ]; then ln -sf /home/builder/contrib/tarballs/aws-l
 if [ \"$CRYPTO\" = \"openssl\" ]; then ln -sf /home/builder/contrib/tarballs/openssl-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
 if [ \"$ZLIB\" = \"cloudflare\" ]; then ln -sf /home/builder/contrib/tarballs/zlib-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
 cd /home/builder/rpmbuild/SPECS && \
-make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} ZLIB=${ZLIB} nginx.spec && \
+make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO} MARCH=${MARCH} LINKER=${LINKER} nginx.spec && \
 rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && \
 find ../RPMS ../SRPMS -name '*.rpm' -exec cp -v {} /output/ \\; && \
 echo 'Build complete. RPMs:' && ls -lh /output/"]
