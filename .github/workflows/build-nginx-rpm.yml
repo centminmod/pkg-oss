@@ -49,6 +49,9 @@ jobs:
           '["9"]'
           ) }}
     steps:
+      - name: Record workflow start time
+        run: echo "WORKFLOW_START=$(date +%s)" >> $GITHUB_ENV
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -208,6 +211,50 @@ jobs:
               echo "WARNING: Some compiler flag checks failed"
             fi
           '
+
+      - name: Benchmark nginx
+        run: |
+          docker run --rm --user root -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }} bash -c '
+            echo "=== Installing nginx for benchmark ==="
+            main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
+            rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -3
+            dnf -y install httpd-tools 2>&1 | tail -3
+
+            echo ""
+            echo "=========================================="
+            echo "=== NGINX BENCHMARK                     ==="
+            echo "=== EL${{ matrix.el_version }} crypto=${{ inputs.crypto || '\''system'\'' }} zlib=${{ inputs.zlib || '\''system'\'' }} ==="
+            echo "=========================================="
+            /usr/local/sbin/nginx
+            sleep 1
+            # Warmup
+            ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+            # Benchmark runs
+            for run in 1 2 3; do
+              echo ""
+              echo "--- Benchmark run ${run}/3 ---"
+              ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+            done
+            /usr/local/sbin/nginx -s quit 2>/dev/null || true
+            echo ""
+            echo "=== Benchmark complete ==="
+          '
+
+      - name: Workflow timing summary
+        if: always()
+        run: |
+          WORKFLOW_END=$(date +%s)
+          ELAPSED=$((WORKFLOW_END - WORKFLOW_START))
+          MINS=$((ELAPSED / 60))
+          SECS=$((ELAPSED % 60))
+          echo "=========================================="
+          echo "=== WORKFLOW TIMING SUMMARY             ==="
+          echo "=========================================="
+          echo "  EL version:  ${{ matrix.el_version }}"
+          echo "  Crypto:      ${{ inputs.crypto || 'system' }}"
+          echo "  Zlib:        ${{ inputs.zlib || 'system' }}"
+          echo "  Total time:  ${MINS}m ${SECS}s (${ELAPSED}s)"
+          echo "=========================================="
 
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
