@@ -140,7 +140,7 @@ jobs:
               echo "=== DEBUG: Container environment ==="
               cat /etc/os-release | head -3
               echo "Tools available:"
-              which perf create_gcov ab 2>&1
+              command -v perf create_gcov ab 2>&1
               perf --version 2>&1
               create_gcov --help 2>&1 | head -3 || echo "WARN: create_gcov --help failed"
               echo ""
