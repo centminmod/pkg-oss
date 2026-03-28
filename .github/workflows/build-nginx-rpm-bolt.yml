@@ -99,6 +99,7 @@ jobs:
             -e CRYPTO=${{ inputs.crypto || 'system' }} \
             -e ZLIB=${{ inputs.zlib || 'system' }} \
             -e LTO=${{ inputs.lto || 'n' }} \
+            -e BOLT=y \
             -v ${{ github.workspace }}/output:/output \
             rpmbuild:el9
 
