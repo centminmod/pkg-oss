@@ -17,6 +17,7 @@ MODULE_CONFARGS_sticky=	--add-dynamic-module=nginx-sticky-module-ng-$(NGINX_STIC
 
 define MODULE_PREBUILD_sticky
 cd %{bdir}/nginx-sticky-module-ng-$(NGINX_STICKY_MODULE_NG_GITHASH) \&\& \
+sed -i '1i #include <openssl/md5.h>\n#include <openssl/sha.h>\n#include <openssl/evp.h>' ngx_http_sticky_misc.c \&\& \
 printf 'ngx_addon_name=ngx_http_sticky_module\n\
 if test -n "$$ngx_module_link"; then\n\
     ngx_module_type=HTTP\n\
