@@ -6,7 +6,7 @@ MODULE_CONTRIB_DEPS_http-redis=	ngx_http_redis
 
 include $(foreach dep,$(MODULE_CONTRIB_DEPS_http-redis),$(CONTRIB)/src/$(dep)/version)
 
-MODULE_VERSION_http_redis=	$(NGX_HTTP_REDIS_VERSION)
+MODULE_VERSION_http_redis=	$(subst -,.,$(NGX_HTTP_REDIS_VERSION))
 MODULE_RELEASE_http_redis=	1
 
 MODULE_VERSION_PREFIX_http_redis=$(MODULE_TARGET_PREFIX)

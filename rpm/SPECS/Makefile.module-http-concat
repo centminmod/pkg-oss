@@ -13,6 +13,8 @@ MODULE_VERSION_PREFIX_http_concat=$(MODULE_TARGET_PREFIX)
 
 MODULE_SOURCES_http_concat=	nginx-http-concat-$(NGINX_HTTP_CONCAT_VERSION).tar.gz
 
+MODULE_PATCHES_http_concat=	$(CONTRIB)/src/nginx-http-concat/dynamic-module.patch
+
 MODULE_CONFARGS_http_concat=	--add-dynamic-module=nginx-http-concat-$(NGINX_HTTP_CONCAT_VERSION)
 
 define MODULE_POST_http_concat
