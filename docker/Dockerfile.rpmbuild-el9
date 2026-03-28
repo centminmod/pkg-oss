@@ -37,7 +37,7 @@ ZLIB=${ZLIB:-system} && \
 LTO=${LTO:-n} && \
 MARCH=${MARCH:-generic} && \
 LINKER=${LINKER:-default} && \
-AUTOFDO=${AUTOFDO:-} && \
+AUTOFDO=${AUTOFDO:-none} && \
 if [ \"$LTO\" = \"y\" ]; then BUILD_INFO=\"${BUILD_INFO}-lto\"; fi && \
 if [ \"$MARCH\" != \"generic\" ]; then BUILD_INFO=\"${BUILD_INFO}-${MARCH}\"; fi && \
 if [ \"$LINKER\" != \"default\" ]; then BUILD_INFO=\"${BUILD_INFO}-${LINKER}\"; fi && \
