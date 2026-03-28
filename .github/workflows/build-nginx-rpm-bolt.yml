@@ -81,6 +81,16 @@ jobs:
       - name: Build rpmbuild Docker image
         run: docker build -f docker/Dockerfile.rpmbuild-el9 -t rpmbuild:el9 .
 
+      - name: Patch spec for BOLT relocations
+        run: |
+          # BOLT needs --emit-relocs in the linked binary for full optimization.
+          # Inject -Wl,--emit-relocs into WITH_LD_OPT in the spec template.
+          # This is BOLT-specific — the baseline and optimized workflows don't need this.
+          sed -i 's|%define WITH_LD_OPT -Wl,-z,relro|%define WITH_LD_OPT -Wl,--emit-relocs -Wl,-z,relro|' \
+            rpm/SPECS/nginx.spec.in
+          echo "Patched nginx.spec.in for BOLT --emit-relocs"
+          grep 'WITH_LD_OPT' rpm/SPECS/nginx.spec.in
+
       - name: Build baseline RPMs
         run: |
           mkdir -p output && chmod 777 output
@@ -333,16 +343,35 @@ jobs:
               echo ""
 
               # Apply BOLT with recommended flags from BOLT README
-              llvm-bolt /profiles/nginx.original \
-                -o /output/nginx.bolt \
-                -data=/profiles/nginx.fdata \
-                --allow-stripped \
-                -reorder-blocks=ext-tsp \
-                -reorder-functions=hfsort \
-                -split-functions \
-                -split-all-cold \
-                -split-eh \
-                -dyno-stats 2>&1
+              # Try full optimization first (requires relocations)
+              # If that fails, fall back to block-level optimizations only
+              if llvm-bolt /profiles/nginx.original \
+                   -o /output/nginx.bolt \
+                   -data=/profiles/nginx.fdata \
+                   --allow-stripped \
+                   -reorder-blocks=ext-tsp \
+                   -reorder-functions=hfsort \
+                   -split-functions \
+                   -split-all-cold \
+                   -split-eh \
+                   -dyno-stats 2>&1; then
+                echo "PASS: Full BOLT optimization succeeded"
+              else
+                echo "WARN: Full BOLT failed (likely no relocations), trying lite mode"
+                echo "      (block reordering only — no function reordering/splitting)"
+                echo "      To enable full BOLT, rebuild nginx with -Wl,--emit-relocs in LD opts"
+                llvm-bolt /profiles/nginx.original \
+                  -o /output/nginx.bolt \
+                  -data=/profiles/nginx.fdata \
+                  --allow-stripped \
+                  -reorder-blocks=ext-tsp \
+                  -dyno-stats \
+                  -lite=1 2>&1 || {
+                  echo "FAIL: Even BOLT lite mode failed"
+                  exit 1
+                }
+                echo "PASS: BOLT lite optimization succeeded"
+              fi
 
               if [ -f /output/nginx.bolt ]; then
                 echo ""
