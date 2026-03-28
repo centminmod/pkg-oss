@@ -36,6 +36,9 @@ ZLIB=${ZLIB:-system} && \
 LTO=${LTO:-n} && \
 MARCH=${MARCH:-generic} && \
 LINKER=${LINKER:-default} && \
+if [ \"$LTO\" = \"y\" ]; then BUILD_INFO=\"${BUILD_INFO}-lto\"; fi && \
+if [ \"$MARCH\" != \"generic\" ]; then BUILD_INFO=\"${BUILD_INFO}-${MARCH}\"; fi && \
+if [ \"$LINKER\" != \"default\" ]; then BUILD_INFO=\"${BUILD_INFO}-${LINKER}\"; fi && \
 cd /home/builder/contrib && make .sum-nginx && \
 if [ \"$CRYPTO\" = \"awslc\" ]; then make .sum-awslc; fi && \
 if [ \"$CRYPTO\" = \"openssl\" ]; then make .sum-openssl; fi && \
