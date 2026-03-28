@@ -402,20 +402,12 @@ jobs:
                 echo "  Original:      ${ORIG_SIZE} bytes ($((ORIG_SIZE/1024))KB)"
                 echo "  BOLT (raw):    ${BOLT_SIZE} bytes ($((BOLT_SIZE/1024))KB)"
 
-                # Strip debug info only from BOLT binary -- BOLT rewrites ELF layout
-                # so strip --strip-unneeded corrupts it. Use strip -g (debug only)
-                # or llvm-strip which understands BOLT section layout.
-                cp /output/nginx.bolt /output/nginx.bolt.unstripped
-                if llvm-strip --strip-unneeded /output/nginx.bolt 2>/dev/null; then
-                  echo "  Stripped with llvm-strip"
-                elif strip -g /output/nginx.bolt 2>/dev/null; then
-                  echo "  Stripped debug info with strip -g"
-                else
-                  echo "  WARN: strip failed, using unstripped binary"
-                  cp /output/nginx.bolt.unstripped /output/nginx.bolt
-                fi
-                STRIPPED_SIZE=$(stat -c%s /output/nginx.bolt)
-                echo "  BOLT (final):  ${STRIPPED_SIZE} bytes ($((STRIPPED_SIZE/1024))KB)"
+                # NOTE: BOLT rewrites ELF section layout. Both GNU strip and
+                # llvm-strip corrupt the binary (SIGSEGV on run). Do NOT strip
+                # BOLT-optimized binaries. The larger size is the tradeoff.
+                # See: https://github.com/llvm/llvm-project/issues/61#{bolt-strip}
+                echo "  BOLT (final):  ${BOLT_SIZE} bytes ($((BOLT_SIZE/1024))KB)"
+                echo "  (not stripped -- stripping corrupts BOLT ELF layout)"
                 echo ""
                 echo "=== DEBUG: BOLT binary info ==="
                 file /output/nginx.bolt 2>/dev/null || true
@@ -468,9 +460,8 @@ jobs:
               # Stop BOLT nginx before replacing binary
               /usr/local/sbin/nginx -s quit 2>/dev/null || true
               sleep 1
-              # Restore original binary (strip debug info for fair comparison)
+              # Restore original binary
               cp /profiles/nginx.original /usr/local/sbin/nginx
-              strip -g /usr/local/sbin/nginx 2>/dev/null || true
               chmod 755 /usr/local/sbin/nginx
               /usr/local/sbin/nginx 2>&1
               sleep 1
