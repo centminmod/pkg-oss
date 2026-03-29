@@ -1,0 +1,658 @@
+name: Benchmark Comparison v4 (Base vs Optimized)
+run-name: "Benchmark: EL${{ inputs.el_version || '9' }} ${{ inputs.h2load_requests || '100000' }}req × ${{ inputs.runs || '3' }}runs"
+
+on:
+  workflow_dispatch:
+    inputs:
+      el_version:
+        description: 'EL version'
+        default: '9'
+        type: choice
+        options: ['8', '9', '10']
+      h2load_requests:
+        description: 'Total requests per h2load run'
+        default: '100000'
+        type: string
+      h2load_clients:
+        description: 'Concurrent clients'
+        default: '100'
+        type: string
+      h2load_streams:
+        description: 'Max concurrent streams'
+        default: '50'
+        type: string
+      runs:
+        description: 'Number of benchmark runs per scenario'
+        default: '3'
+        type: string
+
+jobs:
+  benchmark:
+    name: "Benchmark EL${{ inputs.el_version || '9' }}"
+    runs-on: ubicloud-standard-4
+    steps:
+      - name: Runner environment
+        run: |
+          echo "=== CPU ==="
+          lscpu
+          echo ""
+          echo "=== Memory ==="
+          free -mlt
+          echo ""
+          echo "=== Disk ==="
+          df -hT
+          # Save runner info for HTML report
+          mkdir -p output
+          lscpu | grep "Model name" | sed 's/.*: *//' > output/runner-cpu.txt
+          lscpu | grep "^CPU(s):" | sed 's/.*: *//' >> output/runner-cpu.txt
+          free -m | grep "Mem:" | awk '{print $2}' >> output/runner-cpu.txt
+
+      - name: Check AVX-512 support
+        run: |
+          if grep -q avx512f /proc/cpuinfo; then
+            echo "AVX-512 supported"
+          else
+            echo "::error::Runner CPU does not support AVX-512 (x86-64-v4). Aborting."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile.rpmbuild-el${{ inputs.el_version || '9' }} -t rpmbuild:el${{ inputs.el_version || '9' }} .
+
+      # === BUILD BASE RPMs ===
+      - name: Build base RPMs
+        run: |
+          mkdir -p output-base && chmod 777 output-base
+          docker run --rm \
+            -e CRYPTO=system -e ZLIB=system \
+            -v ${{ github.workspace }}/output-base:/output \
+            rpmbuild:el${{ inputs.el_version || '9' }}
+
+      - name: Build base module RPMs
+        run: |
+          docker run --rm \
+            -e CRYPTO=system -e ZLIB=system \
+            -v ${{ github.workspace }}/output-base:/output \
+            rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
+              set +e
+              CRYPTO=${CRYPTO:-system}
+              ZLIB=${ZLIB:-system}
+              cd /home/builder/contrib && make .sum-nginx
+              ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOURCES/
+              cd /home/builder/rpmbuild/SPECS
+              PASS=0; FAIL=0
+              for mod in accesskey brotli cache-purge dav-ext echo encrypted-session \
+                fancyindex geoip2 headers-more http-concat http-rdns http-redis \
+                image-filter length-hiding lua memc ndk njs redis2 set-misc srcache \
+                subs-filter testcookie vts xslt zstd; do
+                echo "===> Building module: ${mod}"
+                if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs \
+                  CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=n MARCH=generic \
+                  LINKER=default AUTOFDO=none \
+                  module-${mod} > /dev/null 2>&1; then
+                  echo "PASS: ${mod}"
+                  PASS=$((PASS+1))
+                else
+                  echo "FAIL: ${mod}"
+                  FAIL=$((FAIL+1))
+                fi
+              done
+              echo "=== Base module build: $PASS passed, $FAIL failed ==="
+              find ../RPMS ../SRPMS -name "*.rpm" -exec cp {} /output/ \; 2>/dev/null
+            '
+
+      # === BUILD OPTIMIZED RPMs ===
+      - name: Build optimized RPMs
+        run: |
+          mkdir -p output-optimized && chmod 777 output-optimized
+          docker run --rm \
+            -e CRYPTO=system -e ZLIB=system -e LTO=y -e MARCH=x86-64-v4 -e LINKER=mold \
+            -v ${{ github.workspace }}/output-optimized:/output \
+            rpmbuild:el${{ inputs.el_version || '9' }}
+
+      - name: Build optimized module RPMs
+        run: |
+          docker run --rm \
+            -e CRYPTO=system -e ZLIB=system -e LTO=y -e MARCH=x86-64-v4 -e LINKER=mold \
+            -v ${{ github.workspace }}/output-optimized:/output \
+            rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
+              set +e
+              CRYPTO=${CRYPTO:-system}
+              ZLIB=${ZLIB:-system}
+              LTO=${LTO:-y}
+              MARCH=${MARCH:-x86-64-v4}
+              LINKER=${LINKER:-mold}
+              cd /home/builder/contrib && make .sum-nginx
+              ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOURCES/
+              cd /home/builder/rpmbuild/SPECS
+              PASS=0; FAIL=0
+              for mod in accesskey brotli cache-purge dav-ext echo encrypted-session \
+                fancyindex geoip2 headers-more http-concat http-rdns http-redis \
+                image-filter length-hiding lua memc ndk njs redis2 set-misc srcache \
+                subs-filter testcookie vts xslt zstd; do
+                echo "===> Building module: ${mod}"
+                if make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs \
+                  CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO} MARCH=${MARCH} \
+                  LINKER=${LINKER} AUTOFDO=none \
+                  module-${mod} > /dev/null 2>&1; then
+                  echo "PASS: ${mod}"
+                  PASS=$((PASS+1))
+                else
+                  echo "FAIL: ${mod}"
+                  FAIL=$((FAIL+1))
+                fi
+              done
+              echo "=== Optimized module build: $PASS passed, $FAIL failed ==="
+              find ../RPMS ../SRPMS -name "*.rpm" -exec cp {} /output/ \; 2>/dev/null
+            '
+
+      # === BENCHMARK A: Base, no modules ===
+      - name: "Benchmark A: Base, no modules"
+        run: |
+          mkdir -p output
+          docker run --rm --user root \
+            -e REQUESTS=${{ inputs.h2load_requests || '100000' }} \
+            -e CLIENTS=${{ inputs.h2load_clients || '100' }} \
+            -e STREAMS=${{ inputs.h2load_streams || '10' }} \
+            -e RUNS=${{ inputs.runs || '3' }} \
+            -v ${{ github.workspace }}/output-base:/rpms \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
+              # Install base nginx only
+              main_rpm=$(ls /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
+              rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -2
+              dnf -y install nghttp2 2>&1 | tail -3
+
+              # TLS cert
+              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+                -keyout /tmp/bench.key -out /tmp/bench.crt \
+                -subj "/CN=localhost" 2>/dev/null
+              mkdir -p /usr/local/nginx/conf/conf.d
+              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / { root /usr/local/nginx/html; }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
+
+              /usr/local/sbin/nginx
+              sleep 1
+
+              echo "=== Benchmark A: Base, no modules ==="
+              RESULT_FILE=/output/bench-A.txt
+              > "$RESULT_FILE"
+              for THREADS in 1 2 4; do
+                echo "--- threads=$THREADS ---"
+                # Warm-up
+                h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
+                for run in $(seq 1 ${RUNS}); do
+                  OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
+                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
+                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
+                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
+                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
+                  echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
+                  echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
+                done
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              cat "$RESULT_FILE"
+            '
+
+      # === BENCHMARK B: Base, with modules ===
+      - name: "Benchmark B: Base, with modules"
+        run: |
+          docker run --rm --user root \
+            -e REQUESTS=${{ inputs.h2load_requests || '100000' }} \
+            -e CLIENTS=${{ inputs.h2load_clients || '100' }} \
+            -e STREAMS=${{ inputs.h2load_streams || '10' }} \
+            -e RUNS=${{ inputs.runs || '3' }} \
+            -v ${{ github.workspace }}/output-base:/rpms \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
+              # Install base nginx + all module RPMs
+              main_rpm=$(ls /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
+              rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -2
+              for rpm_file in /rpms/nginx-module-*.x86_64.rpm; do
+                [ -f "$rpm_file" ] || continue
+                echo "$rpm_file" | grep -q debuginfo && continue
+                rpm -ivh --nodeps "$rpm_file" 2>&1 | tail -1
+              done
+              dnf -y install nghttp2 2>&1 | tail -3
+
+              MODULE_DIR=/usr/local/nginx/modules
+              # Generate load_module config (NDK first, skip debug)
+              MODULES_CONF=/tmp/modules.conf
+              > "$MODULES_CONF"
+              if [ -f "$MODULE_DIR/ndk_http_module.so" ]; then
+                echo "load_module $MODULE_DIR/ndk_http_module.so;" >> "$MODULES_CONF"
+              fi
+              for so in "$MODULE_DIR"/*.so; do
+                [ -f "$so" ] || continue
+                basename "$so" | grep -q "\-debug\.so$" && continue
+                basename "$so" | grep -q "^ndk_http_module.so$" && continue
+                echo "load_module $so;" >> "$MODULES_CONF"
+              done
+              MOD_COUNT=$(grep -c "^load_module" "$MODULES_CONF")
+              echo "Loading $MOD_COUNT modules"
+
+              # Insert load_module before events block in nginx.conf
+              sed -i "/^events/e cat $MODULES_CONF" /usr/local/nginx/conf/nginx.conf
+
+              # TLS cert
+              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+                -keyout /tmp/bench.key -out /tmp/bench.crt \
+                -subj "/CN=localhost" 2>/dev/null
+              mkdir -p /usr/local/nginx/conf/conf.d
+              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / { root /usr/local/nginx/html; }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
+
+              /usr/local/sbin/nginx -t 2>&1
+              /usr/local/sbin/nginx
+              sleep 1
+
+              echo "=== Benchmark B: Base, with $MOD_COUNT modules ==="
+              RESULT_FILE=/output/bench-B.txt
+              > "$RESULT_FILE"
+              for THREADS in 1 2 4; do
+                echo "--- threads=$THREADS ---"
+                h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
+                for run in $(seq 1 ${RUNS}); do
+                  OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
+                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
+                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
+                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
+                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
+                  echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
+                  echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
+                done
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              cat "$RESULT_FILE"
+            '
+
+      # === BENCHMARK C: Optimized, no modules ===
+      - name: "Benchmark C: Optimized, no modules"
+        run: |
+          docker run --rm --user root \
+            -e REQUESTS=${{ inputs.h2load_requests || '100000' }} \
+            -e CLIENTS=${{ inputs.h2load_clients || '100' }} \
+            -e STREAMS=${{ inputs.h2load_streams || '10' }} \
+            -e RUNS=${{ inputs.runs || '3' }} \
+            -v ${{ github.workspace }}/output-optimized:/rpms \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
+              main_rpm=$(ls /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
+              rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -2
+              dnf -y install nghttp2 2>&1 | tail -3
+
+              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+                -keyout /tmp/bench.key -out /tmp/bench.crt \
+                -subj "/CN=localhost" 2>/dev/null
+              mkdir -p /usr/local/nginx/conf/conf.d
+              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / { root /usr/local/nginx/html; }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
+
+              /usr/local/sbin/nginx
+              sleep 1
+
+              echo "=== Benchmark C: Optimized, no modules ==="
+              RESULT_FILE=/output/bench-C.txt
+              > "$RESULT_FILE"
+              for THREADS in 1 2 4; do
+                echo "--- threads=$THREADS ---"
+                h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
+                for run in $(seq 1 ${RUNS}); do
+                  OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
+                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
+                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
+                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
+                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
+                  echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
+                  echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
+                done
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              cat "$RESULT_FILE"
+            '
+
+      # === BENCHMARK D: Optimized, with modules ===
+      - name: "Benchmark D: Optimized, with modules"
+        run: |
+          docker run --rm --user root \
+            -e REQUESTS=${{ inputs.h2load_requests || '100000' }} \
+            -e CLIENTS=${{ inputs.h2load_clients || '100' }} \
+            -e STREAMS=${{ inputs.h2load_streams || '10' }} \
+            -e RUNS=${{ inputs.runs || '3' }} \
+            -v ${{ github.workspace }}/output-optimized:/rpms \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
+              main_rpm=$(ls /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
+              rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -2
+              for rpm_file in /rpms/nginx-module-*.x86_64.rpm; do
+                [ -f "$rpm_file" ] || continue
+                echo "$rpm_file" | grep -q debuginfo && continue
+                rpm -ivh --nodeps "$rpm_file" 2>&1 | tail -1
+              done
+              dnf -y install nghttp2 2>&1 | tail -3
+
+              MODULE_DIR=/usr/local/nginx/modules
+              MODULES_CONF=/tmp/modules.conf
+              > "$MODULES_CONF"
+              if [ -f "$MODULE_DIR/ndk_http_module.so" ]; then
+                echo "load_module $MODULE_DIR/ndk_http_module.so;" >> "$MODULES_CONF"
+              fi
+              for so in "$MODULE_DIR"/*.so; do
+                [ -f "$so" ] || continue
+                basename "$so" | grep -q "\-debug\.so$" && continue
+                basename "$so" | grep -q "^ndk_http_module.so$" && continue
+                echo "load_module $so;" >> "$MODULES_CONF"
+              done
+              MOD_COUNT=$(grep -c "^load_module" "$MODULES_CONF")
+              echo "Loading $MOD_COUNT modules"
+
+              sed -i "/^events/e cat $MODULES_CONF" /usr/local/nginx/conf/nginx.conf
+
+              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+                -keyout /tmp/bench.key -out /tmp/bench.crt \
+                -subj "/CN=localhost" 2>/dev/null
+              mkdir -p /usr/local/nginx/conf/conf.d
+              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / { root /usr/local/nginx/html; }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
+
+              /usr/local/sbin/nginx -t 2>&1
+              /usr/local/sbin/nginx
+              sleep 1
+
+              echo "=== Benchmark D: Optimized, with $MOD_COUNT modules ==="
+              RESULT_FILE=/output/bench-D.txt
+              > "$RESULT_FILE"
+              for THREADS in 1 2 4; do
+                echo "--- threads=$THREADS ---"
+                h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
+                for run in $(seq 1 ${RUNS}); do
+                  OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
+                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
+                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
+                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
+                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
+                  echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
+                  echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
+                done
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              cat "$RESULT_FILE"
+            '
+
+      # === GENERATE SUMMARY ===
+      - name: Generate benchmark summary
+        run: |
+          cd output
+
+          # === CSV ===
+          echo "scenario,build,modules,threads,run,requests_per_sec,throughput_mb,latency_mean_ms,latency_max_ms" > benchmark-results.csv
+          for scenario in A B C D; do
+            case $scenario in
+              A) build="base"; modules="none" ;;
+              B) build="base"; modules="all" ;;
+              C) build="optimized"; modules="none" ;;
+              D) build="optimized"; modules="all" ;;
+            esac
+            [ -f "bench-${scenario}.txt" ] || continue
+            while IFS= read -r line; do
+              threads=$(echo "$line" | grep -oP 'threads=\K[^ ]+')
+              run=$(echo "$line" | grep -oP 'run=\K[^ ]+')
+              reqs=$(echo "$line" | grep -oP 'reqs=\K[^ ]+')
+              tp=$(echo "$line" | grep -oP 'throughput=\K[^ ]+')
+              lat_mean=$(echo "$line" | grep -oP 'latency_mean=\K[^ ]+')
+              lat_max=$(echo "$line" | grep -oP 'latency_max=\K[^ ]+')
+              echo "${scenario},${build},${modules},${threads},${run},${reqs},${tp},${lat_mean},${lat_max}" >> benchmark-results.csv
+            done < "bench-${scenario}.txt"
+          done
+          echo "=== CSV generated ==="
+          cat benchmark-results.csv
+
+          # === Compute averages with awk ===
+          # Output: scenario,threads,avg_reqs,avg_throughput,avg_latency_mean,avg_latency_max
+          awk -F',' 'NR>1 {
+            key=$1","$4
+            reqs[key]+=$6; tp[key]+=$7; lat[key]+=$8; latmax[key]+=$9; n[key]++
+          }
+          END {
+            for (k in n) {
+              printf "%s,%.2f,%.2f,%.2f,%.2f\n", k, reqs[k]/n[k], tp[k]/n[k], lat[k]/n[k], latmax[k]/n[k]
+            }
+          }' benchmark-results.csv | sort > /tmp/averages.csv
+
+          echo "=== Averages ==="
+          cat /tmp/averages.csv
+
+          # === GITHUB STEP SUMMARY (Markdown) ===
+          {
+            echo "## Benchmark Comparison — EL${{ inputs.el_version || '9' }}"
+            echo ""
+            echo "**Parameters:** ${{ inputs.h2load_requests || '100000' }} requests, ${{ inputs.h2load_clients || '100' }} clients, ${{ inputs.h2load_streams || '10' }} streams, ${{ inputs.runs || '3' }} runs per scenario"
+            echo ""
+            echo "**Scenarios:** A=Base/NoMods, B=Base/AllMods, C=Optimized(LTO+march+mold)/NoMods, D=Optimized/AllMods"
+            echo ""
+
+            for t in 1 2 4; do
+              echo "### ${t} Thread(s) (-t ${t})"
+              echo ""
+              echo "| Scenario | Build | Modules | Avg req/s | Avg Latency (ms) | Avg Throughput (MB/s) |"
+              echo "|----------|-------|---------|-----------|-------------------|----------------------|"
+              for s in A B C D; do
+                case $s in
+                  A) build="Base"; modules="None" ;;
+                  B) build="Base"; modules="All 31" ;;
+                  C) build="Optimized"; modules="None" ;;
+                  D) build="Optimized"; modules="All 31" ;;
+                esac
+                vals=$(grep "^${s},${t}," /tmp/averages.csv | head -1)
+                if [ -n "$vals" ]; then
+                  avg_reqs=$(echo "$vals" | cut -d',' -f3)
+                  avg_tp=$(echo "$vals" | cut -d',' -f4)
+                  avg_lat=$(echo "$vals" | cut -d',' -f5)
+                  echo "| ${s} | ${build} | ${modules} | ${avg_reqs} | ${avg_lat} | ${avg_tp} |"
+                fi
+              done
+              echo ""
+            done
+
+            # Comparisons at t=4
+            echo "### Comparisons (4 threads)"
+            echo ""
+            echo "| Comparison | Delta |"
+            echo "|------------|-------|"
+            A4=$(grep "^A,4," /tmp/averages.csv | cut -d',' -f3)
+            B4=$(grep "^B,4," /tmp/averages.csv | cut -d',' -f3)
+            C4=$(grep "^C,4," /tmp/averages.csv | cut -d',' -f3)
+            D4=$(grep "^D,4," /tmp/averages.csv | cut -d',' -f3)
+            if [ -n "$A4" ] && [ -n "$C4" ] && [ "$A4" != "0" ] && [ "$A4" != "0.00" ]; then
+              delta=$(awk "BEGIN {printf \"%.1f\", ($C4-$A4)/$A4*100}")
+              echo "| Optimization gain (no modules) A→C | +${delta}% |"
+            fi
+            if [ -n "$B4" ] && [ -n "$D4" ] && [ "$B4" != "0" ] && [ "$B4" != "0.00" ]; then
+              delta=$(awk "BEGIN {printf \"%.1f\", ($D4-$B4)/$B4*100}")
+              echo "| Optimization gain (with modules) B→D | +${delta}% |"
+            fi
+            if [ -n "$A4" ] && [ -n "$B4" ] && [ "$A4" != "0" ] && [ "$A4" != "0.00" ]; then
+              delta=$(awk "BEGIN {printf \"%.1f\", ($B4-$A4)/$A4*100}")
+              echo "| Module overhead (base) A→B | ${delta}% |"
+            fi
+            if [ -n "$C4" ] && [ -n "$D4" ] && [ "$C4" != "0" ] && [ "$C4" != "0.00" ]; then
+              delta=$(awk "BEGIN {printf \"%.1f\", ($D4-$C4)/$C4*100}")
+              echo "| Module overhead (optimized) C→D | ${delta}% |"
+            fi
+            echo ""
+
+            # Thread scaling
+            echo "### Thread Scaling"
+            echo ""
+            echo "| Scenario | 1→2 threads | 2→4 threads | 1→4 threads |"
+            echo "|----------|-------------|-------------|-------------|"
+            for s in A B C D; do
+              t1=$(grep "^${s},1," /tmp/averages.csv | cut -d',' -f3)
+              t2=$(grep "^${s},2," /tmp/averages.csv | cut -d',' -f3)
+              t4=$(grep "^${s},4," /tmp/averages.csv | cut -d',' -f3)
+              if [ -n "$t1" ] && [ -n "$t2" ] && [ -n "$t4" ]; then
+                d12=$(awk "BEGIN {if ($t1+0>0) printf \"%.1f\", ($t2-$t1)/$t1*100; else print \"N/A\"}")
+                d24=$(awk "BEGIN {if ($t2+0>0) printf \"%.1f\", ($t4-$t2)/$t2*100; else print \"N/A\"}")
+                d14=$(awk "BEGIN {if ($t1+0>0) printf \"%.1f\", ($t4-$t1)/$t1*100; else print \"N/A\"}")
+                echo "| ${s} | +${d12}% | +${d24}% | +${d14}% |"
+              fi
+            done
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
+
+          # === Plain text summary ===
+          cp $GITHUB_STEP_SUMMARY benchmark-summary.txt 2>/dev/null || true
+
+          # === HTML Highcharts ===
+          # Build JSON data for charts
+          RUNNER_CPU=$(head -1 runner-cpu.txt 2>/dev/null || echo "Unknown")
+          RUNNER_CORES=$(sed -n '2p' runner-cpu.txt 2>/dev/null || echo "?")
+          RUNNER_MEM=$(sed -n '3p' runner-cpu.txt 2>/dev/null || echo "?")
+
+          # Build arrays for each scenario/thread combo
+          JSON_REQS=""
+          JSON_LAT=""
+          for s in A B C D; do
+            for t in 1 2 4; do
+              vals=$(grep "^${s},${t}," /tmp/averages.csv | head -1)
+              avg_reqs=$(echo "$vals" | cut -d',' -f3)
+              avg_lat=$(echo "$vals" | cut -d',' -f5)
+              [ -z "$avg_reqs" ] && avg_reqs="0"
+              [ -z "$avg_lat" ] && avg_lat="0"
+              JSON_REQS="${JSON_REQS}{s:'${s}',t:${t},v:${avg_reqs}},"
+              JSON_LAT="${JSON_LAT}{s:'${s}',t:${t},v:${avg_lat}},"
+            done
+          done
+
+          cat > benchmark-chart.html << 'HTMLEOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+          <meta charset="utf-8">
+          <title>Nginx Benchmark Comparison</title>
+          <script src="https://code.highcharts.com/highcharts.js"></script>
+          <script src="https://code.highcharts.com/modules/exporting.js"></script>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #f5f5f5; }
+            .container { max-width: 1200px; margin: 0 auto; }
+            h1 { color: #333; }
+            .chart-container { background: #fff; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            .info { background: #e8f4fd; border-radius: 8px; padding: 15px; margin: 10px 0; }
+            table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+            th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: right; }
+            th { background: #4a90d9; color: white; }
+            tr:nth-child(even) { background: #f9f9f9; }
+            td:first-child, th:first-child { text-align: left; }
+            .positive { color: #27ae60; font-weight: bold; }
+            .negative { color: #e74c3c; font-weight: bold; }
+          </style>
+          </head>
+          <body>
+          <div class="container">
+          HTMLEOF
+
+          cat >> benchmark-chart.html << HTMLEOF2
+          <h1>Nginx Benchmark Comparison — EL${{ inputs.el_version || '9' }}</h1>
+          <div class="info">
+            <strong>Runner:</strong> ${RUNNER_CPU} (${RUNNER_CORES} cores, ${RUNNER_MEM}MB RAM)<br>
+            <strong>Parameters:</strong> ${{ inputs.h2load_requests || '100000' }} requests, ${{ inputs.h2load_clients || '100' }} clients, ${{ inputs.h2load_streams || '10' }} streams, ${{ inputs.runs || '3' }} runs<br>
+            <strong>Scenarios:</strong> A=Base/NoMods, B=Base/AllMods, C=Optimized(LTO+v4+mold)/NoMods, D=Optimized/AllMods
+          </div>
+          HTMLEOF2
+
+          cat >> benchmark-chart.html << 'HTMLEOF3'
+          <div class="chart-container"><div id="chart-reqs" style="height:400px"></div></div>
+          <div class="chart-container"><div id="chart-latency" style="height:400px"></div></div>
+          <div class="chart-container"><div id="chart-scaling" style="height:400px"></div></div>
+          HTMLEOF3
+
+          # Build comparison table HTML
+          {
+            echo '<div class="chart-container">'
+            echo '<h2>Comparison Summary (4 threads)</h2>'
+            echo '<table><tr><th>Comparison</th><th>Delta</th></tr>'
+            if [ -n "$A4" ] && [ -n "$C4" ]; then
+              delta=$(awk "BEGIN {printf \"%.1f\", ($C4-$A4)/$A4*100}")
+              echo "<tr><td>Optimization gain (no modules) A→C</td><td class=\"positive\">+${delta}%</td></tr>"
+            fi
+            if [ -n "$B4" ] && [ -n "$D4" ]; then
+              delta=$(awk "BEGIN {printf \"%.1f\", ($D4-$B4)/$B4*100}")
+              echo "<tr><td>Optimization gain (with modules) B→D</td><td class=\"positive\">+${delta}%</td></tr>"
+            fi
+            if [ -n "$A4" ] && [ -n "$B4" ]; then
+              delta=$(awk "BEGIN {printf \"%.1f\", ($B4-$A4)/$A4*100}")
+              echo "<tr><td>Module overhead (base) A→B</td><td class=\"negative\">${delta}%</td></tr>"
+            fi
+            if [ -n "$C4" ] && [ -n "$D4" ]; then
+              delta=$(awk "BEGIN {printf \"%.1f\", ($D4-$C4)/$C4*100}")
+              echo "<tr><td>Module overhead (optimized) C→D</td><td class=\"negative\">${delta}%</td></tr>"
+            fi
+            echo '</table></div>'
+          } >> benchmark-chart.html
+
+          cat >> benchmark-chart.html << HTMLEOF4
+          <script>
+          var data = [${JSON_REQS}];
+          var latData = [${JSON_LAT}];
+          var labels = {A:'Base/NoMods', B:'Base/AllMods', C:'Optimized/NoMods', D:'Optimized/AllMods'};
+          var colors = {A:'#4a90d9', B:'#7eb8da', C:'#e8783a', D:'#f0a87e'};
+
+          // Requests/sec grouped bar chart
+          Highcharts.chart('chart-reqs', {
+            chart: {type:'column'}, title: {text:'Requests/sec by Scenario and Thread Count'},
+            xAxis: {categories:['A: Base/NoMods','B: Base/AllMods','C: Optimized/NoMods','D: Optimized/AllMods']},
+            yAxis: {title:{text:'Requests/sec'}},
+            series: [1,2,4].map(function(t) {
+              return {name: t+' thread(s)', data: ['A','B','C','D'].map(function(s) {
+                var d = data.find(function(x){return x.s===s && x.t===t});
+                return d ? d.v : 0;
+              })};
+            }),
+            plotOptions: {column: {dataLabels:{enabled:true, format:'{y:.0f}'}}},
+            colors: ['#4a90d9','#e8783a','#27ae60']
+          });
+
+          // Latency grouped bar chart
+          Highcharts.chart('chart-latency', {
+            chart: {type:'column'}, title: {text:'Mean Latency (ms) by Scenario and Thread Count'},
+            xAxis: {categories:['A: Base/NoMods','B: Base/AllMods','C: Optimized/NoMods','D: Optimized/AllMods']},
+            yAxis: {title:{text:'Latency (ms)'}, reversed:false},
+            series: [1,2,4].map(function(t) {
+              return {name: t+' thread(s)', data: ['A','B','C','D'].map(function(s) {
+                var d = latData.find(function(x){return x.s===s && x.t===t});
+                return d ? d.v : 0;
+              })};
+            }),
+            plotOptions: {column: {dataLabels:{enabled:true, format:'{y:.2f}'}}},
+            colors: ['#4a90d9','#e8783a','#27ae60']
+          });
+
+          // Thread scaling line chart
+          Highcharts.chart('chart-scaling', {
+            chart: {type:'line'}, title: {text:'Thread Scaling (req/s)'},
+            xAxis: {categories:['1 thread','2 threads','4 threads']},
+            yAxis: {title:{text:'Requests/sec'}},
+            series: ['A','B','C','D'].map(function(s) {
+              return {name: labels[s], color: colors[s], data: [1,2,4].map(function(t) {
+                var d = data.find(function(x){return x.s===s && x.t===t});
+                return d ? d.v : 0;
+              }), marker:{radius:6}};
+            }),
+            plotOptions: {line: {dataLabels:{enabled:true, format:'{y:.0f}'}}}
+          });
+          </script>
+          </div></body></html>
+          HTMLEOF4
+
+          echo "=== Summary files generated ==="
+          ls -la benchmark-*
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-comparison-el${{ inputs.el_version || '9' }}
+          path: |
+            output/benchmark-results.csv
+            output/benchmark-chart.html
+            output/benchmark-summary.txt
+            output/bench-*.txt
