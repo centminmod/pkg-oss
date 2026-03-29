@@ -30,9 +30,13 @@ BANNER
 endef
 export MODULE_POST_xslt
 
-MODULE_DYNCONF_xslt = 40-xslt
-
-define MODULE_DYNLOAD_xslt
-load_module "modules/ngx_http_xslt_filter_module.so";
+define MODULE_PREINSTALL_xslt
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_xslt_filter_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-xslt.conf
 endef
-export MODULE_DYNLOAD_xslt
+export MODULE_PREINSTALL_xslt
+
+define MODULE_FILES_xslt
+%{cm_confdir}/dynamic-modules.d/40-xslt.conf
+endef
+export MODULE_FILES_xslt

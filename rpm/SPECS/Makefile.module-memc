@@ -33,9 +33,13 @@ BANNER
 endef
 export MODULE_POST_memc
 
-MODULE_DYNCONF_memc = 30-memc
-
-define MODULE_DYNLOAD_memc
-load_module "modules/ngx_http_memc_module.so";
+define MODULE_PREINSTALL_memc
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_memc_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/30-memc.conf
 endef
-export MODULE_DYNLOAD_memc
+export MODULE_PREINSTALL_memc
+
+define MODULE_FILES_memc
+%{cm_confdir}/dynamic-modules.d/30-memc.conf
+endef
+export MODULE_FILES_memc

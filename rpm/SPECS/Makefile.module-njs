@@ -73,10 +73,14 @@ if [ -f %{bdir}/njs-cli-binary ]; then \
 else \
     echo "WARNING: njs CLI binary not available, skipping" ; \
 fi
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_js_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-njs.conf
+echo 'load_module "modules/ngx_stream_js_module.so";' >> $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-njs.conf
 endef
 export MODULE_PREINSTALL_njs
 
 define MODULE_FILES_njs
+%{cm_confdir}/dynamic-modules.d/40-njs.conf
 endef
 export MODULE_FILES_njs
 
@@ -100,11 +104,3 @@ https://nginx.org/en/docs/stream/ngx_stream_js_module.html
 BANNER
 endef
 export MODULE_POST_njs
-
-MODULE_DYNCONF_njs = 40-njs
-
-define MODULE_DYNLOAD_njs
-load_module "modules/ngx_http_js_module.so";
-load_module "modules/ngx_stream_js_module.so";
-endef
-export MODULE_DYNLOAD_njs

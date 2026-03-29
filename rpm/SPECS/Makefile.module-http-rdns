@@ -33,9 +33,13 @@ BANNER
 endef
 export MODULE_POST_http_rdns
 
-MODULE_DYNCONF_http_rdns = 40-http-rdns
-
-define MODULE_DYNLOAD_http_rdns
-load_module "modules/ngx_http_rdns_module.so";
+define MODULE_PREINSTALL_http_rdns
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_rdns_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-http-rdns.conf
 endef
-export MODULE_DYNLOAD_http_rdns
+export MODULE_PREINSTALL_http_rdns
+
+define MODULE_FILES_http_rdns
+%{cm_confdir}/dynamic-modules.d/40-http-rdns.conf
+endef
+export MODULE_FILES_http_rdns

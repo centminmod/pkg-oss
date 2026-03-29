@@ -33,9 +33,13 @@ BANNER
 endef
 export MODULE_POST_srcache
 
-MODULE_DYNCONF_srcache = 30-srcache
-
-define MODULE_DYNLOAD_srcache
-load_module "modules/ngx_http_srcache_filter_module.so";
+define MODULE_PREINSTALL_srcache
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_srcache_filter_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/30-srcache.conf
 endef
-export MODULE_DYNLOAD_srcache
+export MODULE_PREINSTALL_srcache
+
+define MODULE_FILES_srcache
+%{cm_confdir}/dynamic-modules.d/30-srcache.conf
+endef
+export MODULE_FILES_srcache

@@ -42,9 +42,13 @@ BANNER
 endef
 export MODULE_POST_ndk
 
-MODULE_DYNCONF_ndk = 10-ndk
-
-define MODULE_DYNLOAD_ndk
-load_module "modules/ndk_http_module.so";
+define MODULE_PREINSTALL_ndk
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ndk_http_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/10-ndk.conf
 endef
-export MODULE_DYNLOAD_ndk
+export MODULE_PREINSTALL_ndk
+
+define MODULE_FILES_ndk
+%{cm_confdir}/dynamic-modules.d/10-ndk.conf
+endef
+export MODULE_FILES_ndk

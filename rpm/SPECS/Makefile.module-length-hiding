@@ -33,9 +33,13 @@ BANNER
 endef
 export MODULE_POST_length_hiding
 
-MODULE_DYNCONF_length_hiding = 40-length-hiding
-
-define MODULE_DYNLOAD_length_hiding
-load_module "modules/ngx_http_length_hiding_filter_module.so";
+define MODULE_PREINSTALL_length_hiding
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_length_hiding_filter_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-length-hiding.conf
 endef
-export MODULE_DYNLOAD_length_hiding
+export MODULE_PREINSTALL_length_hiding
+
+define MODULE_FILES_length_hiding
+%{cm_confdir}/dynamic-modules.d/40-length-hiding.conf
+endef
+export MODULE_FILES_length_hiding
