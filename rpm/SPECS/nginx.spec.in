@@ -162,6 +162,25 @@ Source6: nginx.suse.logrotate
 Source7: nginx-debug.service
 Source8: nginx.copyright
 Source9: nginx.check-reload.sh
+Source10: dynamic-modules.conf
+Source11: dynamic-modules-includes.conf
+Source12: maintenance.conf
+Source13: sitestatus.conf
+Source14: webp.conf
+Source15: ssl_include.conf
+Source16: fastcgi_param_https_map.conf
+Source17: normalize_encoding.conf
+Source18: default_phpupstream.conf
+Source19: vts_http.conf
+Source20: vts_server.conf
+Source21: vts_mainserver.conf
+Source22: geoip.conf
+Source23: pagespeedadmin.conf
+Source24: drop.conf
+Source25: staticfiles.conf
+Source26: php.conf
+Source27: errorpage.conf
+Source28: phpstatus.conf
 
 %%BASE_PATCHES%%
 %%CRYPTO_SOURCES%%
@@ -191,6 +210,7 @@ Provides: centminmod-nginx-r%{base_version}
 Provides: centminmod-nginx-crypto(%%CRYPTO_NAME%%)
 Provides: centminmod-nginx-zlib(%%ZLIB_NAME%%)
 Conflicts: nginx
+Requires: nginx-module-headers-more
 
 %if !(0%{?rhel} == 7)
 Recommends: logrotate
@@ -328,6 +348,59 @@ make %{?_smp_mflags}
 %{__install} -m 644 -p %{SOURCE3} \
     $RPM_BUILD_ROOT%{cm_confdir}/conf.d/default.conf
 
+# Create dynamic-modules.d/ directory for per-module drop-in configs
+%{__mkdir} -p $RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+
+# Install dynamic module loading config files
+%{__install} -m 644 -p %{SOURCE10} \
+    $RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.conf
+%{__install} -m 644 -p %{SOURCE11} \
+    $RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules-includes.conf
+
+# Install Centmin Mod config include files (Tier 1 — always safe)
+%{__install} -m 644 -p %{SOURCE12} \
+    $RPM_BUILD_ROOT%{cm_confdir}/maintenance.conf
+%{__install} -m 644 -p %{SOURCE13} \
+    $RPM_BUILD_ROOT%{cm_confdir}/sitestatus.conf
+%{__install} -m 644 -p %{SOURCE14} \
+    $RPM_BUILD_ROOT%{cm_confdir}/webp.conf
+%{__install} -m 644 -p %{SOURCE15} \
+    $RPM_BUILD_ROOT%{cm_confdir}/ssl_include.conf
+%{__install} -m 644 -p %{SOURCE16} \
+    $RPM_BUILD_ROOT%{cm_confdir}/fastcgi_param_https_map.conf
+%{__install} -m 644 -p %{SOURCE17} \
+    $RPM_BUILD_ROOT%{cm_confdir}/normalize_encoding.conf
+%{__install} -m 644 -p %{SOURCE18} \
+    $RPM_BUILD_ROOT%{cm_confdir}/default_phpupstream.conf
+
+# Install module-dependent config files (Tier 2 — commented in nginx.conf)
+%{__install} -m 644 -p %{SOURCE19} \
+    $RPM_BUILD_ROOT%{cm_confdir}/vts_http.conf
+%{__install} -m 644 -p %{SOURCE20} \
+    $RPM_BUILD_ROOT%{cm_confdir}/vts_server.conf
+%{__install} -m 644 -p %{SOURCE21} \
+    $RPM_BUILD_ROOT%{cm_confdir}/vts_mainserver.conf
+%{__install} -m 644 -p %{SOURCE22} \
+    $RPM_BUILD_ROOT%{cm_confdir}/geoip.conf
+%{__install} -m 644 -p %{SOURCE23} \
+    $RPM_BUILD_ROOT%{cm_confdir}/pagespeedadmin.conf
+
+# Install vhost include files (Tier 3)
+%{__install} -m 644 -p %{SOURCE24} \
+    $RPM_BUILD_ROOT%{cm_confdir}/drop.conf
+%{__install} -m 644 -p %{SOURCE25} \
+    $RPM_BUILD_ROOT%{cm_confdir}/staticfiles.conf
+%{__install} -m 644 -p %{SOURCE26} \
+    $RPM_BUILD_ROOT%{cm_confdir}/php.conf
+%{__install} -m 644 -p %{SOURCE27} \
+    $RPM_BUILD_ROOT%{cm_confdir}/errorpage.conf
+%{__install} -m 644 -p %{SOURCE28} \
+    $RPM_BUILD_ROOT%{cm_confdir}/phpstatus.conf
+
+# Create additional directories
+%{__mkdir} -p $RPM_BUILD_ROOT%{cm_confdir}/ssl
+%{__mkdir} -p $RPM_BUILD_ROOT/var/log/nginx
+
 # Install man pages (system location)
 %{__install} -p -D -m 0644 %{bdir}/objs/nginx.8 \
     $RPM_BUILD_ROOT%{_mandir}/man8/nginx.8
@@ -376,8 +449,11 @@ cat /dev/null > debugsources.list
 %dir %{cm_prefix}
 %dir %{cm_confdir}
 %dir %{cm_confdir}/conf.d
+%dir %{cm_confdir}/ssl
+%dir %{cm_confdir}/dynamic-modules.d
 %dir %{cm_moduledir}
 %dir %{cm_logdir}
+%dir /var/log/nginx
 
 %config(noreplace) %{cm_confdir}/nginx.conf
 %config(noreplace) %{cm_confdir}/conf.d/default.conf
@@ -385,6 +461,33 @@ cat /dev/null > debugsources.list
 %config(noreplace) %{cm_confdir}/fastcgi_params
 %config(noreplace) %{cm_confdir}/scgi_params
 %config(noreplace) %{cm_confdir}/uwsgi_params
+
+# Dynamic module loading (base RPM owned, not noreplace)
+%{cm_confdir}/dynamic-modules.conf
+%config(noreplace) %{cm_confdir}/dynamic-modules-includes.conf
+
+# Centmin Mod config include files (Tier 1 — always safe)
+%config(noreplace) %{cm_confdir}/maintenance.conf
+%config(noreplace) %{cm_confdir}/sitestatus.conf
+%config(noreplace) %{cm_confdir}/webp.conf
+%config(noreplace) %{cm_confdir}/ssl_include.conf
+%config(noreplace) %{cm_confdir}/fastcgi_param_https_map.conf
+%config(noreplace) %{cm_confdir}/normalize_encoding.conf
+%config(noreplace) %{cm_confdir}/default_phpupstream.conf
+
+# Module-dependent config files (Tier 2 — commented in nginx.conf)
+%config(noreplace) %{cm_confdir}/vts_http.conf
+%config(noreplace) %{cm_confdir}/vts_server.conf
+%config(noreplace) %{cm_confdir}/vts_mainserver.conf
+%config(noreplace) %{cm_confdir}/geoip.conf
+%config(noreplace) %{cm_confdir}/pagespeedadmin.conf
+
+# Vhost include files (Tier 3)
+%config(noreplace) %{cm_confdir}/drop.conf
+%config(noreplace) %{cm_confdir}/staticfiles.conf
+%config(noreplace) %{cm_confdir}/php.conf
+%config(noreplace) %{cm_confdir}/errorpage.conf
+%config(noreplace) %{cm_confdir}/phpstatus.conf
 
 %config(noreplace) %{_sysconfdir}/logrotate.d/nginx
 %{_unitdir}/nginx.service
@@ -446,6 +549,13 @@ BANNER
             %{__chown} nginx:%{nginx_loggroup} %{cm_logdir}/error.log
         fi
     fi
+
+    # Create proxy temp directory
+    %{__mkdir} -p /tmp/nginx_proxy
+    %{__chown} nginx:%{nginx_group} /tmp/nginx_proxy
+
+    # Set permissions on /var/log/nginx for VTS dump and additional logs
+    %{__chown} nginx:%{nginx_loggroup} /var/log/nginx
 
     # SELinux: restore file contexts for /usr/local paths
     restorecon -R %{cm_prefix} 2>/dev/null || true

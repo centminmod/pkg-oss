@@ -29,3 +29,10 @@ https://nginx.org/en/docs/http/ngx_http_xslt_module.html
 BANNER
 endef
 export MODULE_POST_xslt
+
+MODULE_DYNCONF_xslt = 40-xslt
+
+define MODULE_DYNLOAD_xslt
+load_module "modules/ngx_http_xslt_filter_module.so";
+endef
+export MODULE_DYNLOAD_xslt

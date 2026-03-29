@@ -48,3 +48,10 @@ https://github.com/openresty/encrypted-session-nginx-module
 BANNER
 endef
 export MODULE_POST_encrypted_session
+
+MODULE_DYNCONF_encrypted_session = 20-encrypted-session
+
+define MODULE_DYNLOAD_encrypted_session
+load_module "modules/ngx_http_encrypted_session_module.so";
+endef
+export MODULE_DYNLOAD_encrypted_session

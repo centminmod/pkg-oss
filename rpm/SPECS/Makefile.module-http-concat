@@ -47,3 +47,10 @@ https://github.com/alibaba/nginx-http-concat
 BANNER
 endef
 export MODULE_POST_http_concat
+
+MODULE_DYNCONF_http_concat = 40-http-concat
+
+define MODULE_DYNLOAD_http_concat
+load_module "modules/ngx_http_concat_module.so";
+endef
+export MODULE_DYNLOAD_http_concat

@@ -48,3 +48,10 @@ https://github.com/openresty/set-misc-nginx-module
 BANNER
 endef
 export MODULE_POST_set_misc
+
+MODULE_DYNCONF_set_misc = 20-set-misc
+
+define MODULE_DYNLOAD_set_misc
+load_module "modules/ngx_http_set_misc_module.so";
+endef
+export MODULE_DYNLOAD_set_misc

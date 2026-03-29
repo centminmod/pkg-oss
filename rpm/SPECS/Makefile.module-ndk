@@ -41,3 +41,10 @@ https://github.com/simpl/ngx_devel_kit
 BANNER
 endef
 export MODULE_POST_ndk
+
+MODULE_DYNCONF_ndk = 10-ndk
+
+define MODULE_DYNLOAD_ndk
+load_module "modules/ndk_http_module.so";
+endef
+export MODULE_DYNLOAD_ndk

@@ -32,3 +32,10 @@ https://github.com/kyprizel/testcookie-nginx-module
 BANNER
 endef
 export MODULE_POST_testcookie
+
+MODULE_DYNCONF_testcookie = 40-testcookie
+
+define MODULE_DYNLOAD_testcookie
+load_module "modules/ngx_http_testcookie_access_module.so";
+endef
+export MODULE_DYNLOAD_testcookie
