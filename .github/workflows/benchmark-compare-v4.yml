@@ -47,6 +47,15 @@ jobs:
           lscpu | grep "^CPU(s):" | sed 's/.*: *//' >> output/runner-cpu.txt
           free -m | grep "Mem:" | awk '{print $2}' >> output/runner-cpu.txt
 
+      - name: Check AVX-512 support
+        run: |
+          if grep -q avx512f /proc/cpuinfo; then
+            echo "AVX-512 supported"
+          else
+            echo "::error::Runner CPU does not support AVX-512 (x86-64-v4). Aborting."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
