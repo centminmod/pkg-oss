@@ -39,10 +39,14 @@ BANNER
 endef
 export MODULE_POST_geoip2
 
-MODULE_DYNCONF_geoip2 = 40-geoip2
-
-define MODULE_DYNLOAD_geoip2
-load_module "modules/ngx_http_geoip2_module.so";
-load_module "modules/ngx_stream_geoip2_module.so";
+define MODULE_PREINSTALL_geoip2
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_geoip2_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-geoip2.conf
+echo 'load_module "modules/ngx_stream_geoip2_module.so";' >> $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-geoip2.conf
 endef
-export MODULE_DYNLOAD_geoip2
+export MODULE_PREINSTALL_geoip2
+
+define MODULE_FILES_geoip2
+%{cm_confdir}/dynamic-modules.d/40-geoip2.conf
+endef
+export MODULE_FILES_geoip2

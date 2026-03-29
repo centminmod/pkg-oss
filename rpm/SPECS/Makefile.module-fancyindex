@@ -33,9 +33,13 @@ BANNER
 endef
 export MODULE_POST_fancyindex
 
-MODULE_DYNCONF_fancyindex = 40-fancyindex
-
-define MODULE_DYNLOAD_fancyindex
-load_module "modules/ngx_http_fancyindex_module.so";
+define MODULE_PREINSTALL_fancyindex
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_fancyindex_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-fancyindex.conf
 endef
-export MODULE_DYNLOAD_fancyindex
+export MODULE_PREINSTALL_fancyindex
+
+define MODULE_FILES_fancyindex
+%{cm_confdir}/dynamic-modules.d/40-fancyindex.conf
+endef
+export MODULE_FILES_fancyindex

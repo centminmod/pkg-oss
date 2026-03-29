@@ -43,10 +43,14 @@ BANNER
 endef
 export MODULE_POST_brotli
 
-MODULE_DYNCONF_brotli = 40-brotli
-
-define MODULE_DYNLOAD_brotli
-load_module "modules/ngx_http_brotli_filter_module.so";
-load_module "modules/ngx_http_brotli_static_module.so";
+define MODULE_PREINSTALL_brotli
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_brotli_filter_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-brotli.conf
+echo 'load_module "modules/ngx_http_brotli_static_module.so";' >> $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-brotli.conf
 endef
-export MODULE_DYNLOAD_brotli
+export MODULE_PREINSTALL_brotli
+
+define MODULE_FILES_brotli
+%{cm_confdir}/dynamic-modules.d/40-brotli.conf
+endef
+export MODULE_FILES_brotli

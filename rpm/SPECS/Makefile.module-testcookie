@@ -33,9 +33,13 @@ BANNER
 endef
 export MODULE_POST_testcookie
 
-MODULE_DYNCONF_testcookie = 40-testcookie
-
-define MODULE_DYNLOAD_testcookie
-load_module "modules/ngx_http_testcookie_access_module.so";
+define MODULE_PREINSTALL_testcookie
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_testcookie_access_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-testcookie.conf
 endef
-export MODULE_DYNLOAD_testcookie
+export MODULE_PREINSTALL_testcookie
+
+define MODULE_FILES_testcookie
+%{cm_confdir}/dynamic-modules.d/40-testcookie.conf
+endef
+export MODULE_FILES_testcookie

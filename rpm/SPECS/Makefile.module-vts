@@ -33,9 +33,13 @@ BANNER
 endef
 export MODULE_POST_vts
 
-MODULE_DYNCONF_vts = 40-vts
-
-define MODULE_DYNLOAD_vts
-load_module "modules/ngx_http_vhost_traffic_status_module.so";
+define MODULE_PREINSTALL_vts
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_vhost_traffic_status_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-vts.conf
 endef
-export MODULE_DYNLOAD_vts
+export MODULE_PREINSTALL_vts
+
+define MODULE_FILES_vts
+%{cm_confdir}/dynamic-modules.d/40-vts.conf
+endef
+export MODULE_FILES_vts

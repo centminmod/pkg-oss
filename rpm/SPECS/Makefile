@@ -381,12 +381,6 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 	buildenv=`echo "$$MODULE_ENV_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
 	files=`echo "$$MODULE_FILES_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
 	post=`echo "$$MODULE_POST_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
-	dynconfname="$(MODULE_DYNCONF_$(call modname, $*))" ; \
-	if [ -n "$${dynconfname}" ]; then \
-		dynload=`echo "$$MODULE_DYNLOAD_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
-		preinstall="$${preinstall}$${CR}%{__mkdir} -p \$$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d$${CR}cat > \$$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/$${dynconfname}.conf << 'DYNEOF'$${CR}$${dynload}$${CR}DYNEOF" ; \
-		files="$${files}$${CR}%{cm_confdir}/dynamic-modules.d/$${dynconfname}.conf" ; \
-	fi ; \
 	sed $(MODULE_SPEC_TEMPLATE) \
 		-e "s#%%NAME%%#$${pkgname}#g" \
 		-e "s#%%PACKAGE_VENDOR%%#$(PACKAGE_VENDOR)#g" \

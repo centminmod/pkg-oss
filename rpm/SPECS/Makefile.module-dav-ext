@@ -41,9 +41,13 @@ BANNER
 endef
 export MODULE_POST_dav_ext
 
-MODULE_DYNCONF_dav_ext = 40-dav-ext
-
-define MODULE_DYNLOAD_dav_ext
-load_module "modules/ngx_http_dav_ext_module.so";
+define MODULE_PREINSTALL_dav_ext
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_dav_ext_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-dav-ext.conf
 endef
-export MODULE_DYNLOAD_dav_ext
+export MODULE_PREINSTALL_dav_ext
+
+define MODULE_FILES_dav_ext
+%{cm_confdir}/dynamic-modules.d/40-dav-ext.conf
+endef
+export MODULE_FILES_dav_ext

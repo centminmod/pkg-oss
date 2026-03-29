@@ -33,9 +33,13 @@ BANNER
 endef
 export MODULE_POST_subs_filter
 
-MODULE_DYNCONF_subs_filter = 40-subs-filter
-
-define MODULE_DYNLOAD_subs_filter
-load_module "modules/ngx_http_subs_filter_module.so";
+define MODULE_PREINSTALL_subs_filter
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_subs_filter_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-subs-filter.conf
 endef
-export MODULE_DYNLOAD_subs_filter
+export MODULE_PREINSTALL_subs_filter
+
+define MODULE_FILES_subs_filter
+%{cm_confdir}/dynamic-modules.d/40-subs-filter.conf
+endef
+export MODULE_FILES_subs_filter

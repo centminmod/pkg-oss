@@ -48,9 +48,13 @@ BANNER
 endef
 export MODULE_POST_http_concat
 
-MODULE_DYNCONF_http_concat = 40-http-concat
-
-define MODULE_DYNLOAD_http_concat
-load_module "modules/ngx_http_concat_module.so";
+define MODULE_PREINSTALL_http_concat
+%{__mkdir} -p $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d
+echo 'load_module "modules/ngx_http_concat_module.so";' > $$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/40-http-concat.conf
 endef
-export MODULE_DYNLOAD_http_concat
+export MODULE_PREINSTALL_http_concat
+
+define MODULE_FILES_http_concat
+%{cm_confdir}/dynamic-modules.d/40-http-concat.conf
+endef
+export MODULE_FILES_http_concat
