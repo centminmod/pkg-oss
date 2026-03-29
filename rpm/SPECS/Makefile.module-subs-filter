@@ -32,3 +32,10 @@ https://github.com/yaoweibin/ngx_http_substitutions_filter_module
 BANNER
 endef
 export MODULE_POST_subs_filter
+
+MODULE_DYNCONF_subs_filter = 40-subs-filter
+
+define MODULE_DYNLOAD_subs_filter
+load_module "modules/ngx_http_subs_filter_module.so";
+endef
+export MODULE_DYNLOAD_subs_filter

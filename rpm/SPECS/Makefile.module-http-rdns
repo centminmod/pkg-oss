@@ -32,3 +32,10 @@ https://github.com/flant/nginx-http-rdns
 BANNER
 endef
 export MODULE_POST_http_rdns
+
+MODULE_DYNCONF_http_rdns = 40-http-rdns
+
+define MODULE_DYNLOAD_http_rdns
+load_module "modules/ngx_http_rdns_module.so";
+endef
+export MODULE_DYNLOAD_http_rdns

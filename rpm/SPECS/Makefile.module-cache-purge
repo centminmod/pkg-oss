@@ -32,3 +32,10 @@ https://github.com/nginx-modules/ngx_cache_purge
 BANNER
 endef
 export MODULE_POST_cache_purge
+
+MODULE_DYNCONF_cache_purge = 40-cache-purge
+
+define MODULE_DYNLOAD_cache_purge
+load_module "modules/ngx_http_cache_purge_module.so";
+endef
+export MODULE_DYNLOAD_cache_purge

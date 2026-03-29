@@ -32,3 +32,10 @@ https://github.com/openresty/srcache-nginx-module
 BANNER
 endef
 export MODULE_POST_srcache
+
+MODULE_DYNCONF_srcache = 30-srcache
+
+define MODULE_DYNLOAD_srcache
+load_module "modules/ngx_http_srcache_filter_module.so";
+endef
+export MODULE_DYNLOAD_srcache

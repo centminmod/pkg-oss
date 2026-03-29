@@ -220,6 +220,9 @@ for so in `find %{bdir}/objs/ -maxdepth 1 -type f -name "*.so"`; do
    $RPM_BUILD_ROOT%{cm_moduledir}/
 done
 
+# Install dynamic module drop-in config for dynamic-modules.d/
+%%MODULE_DYNCONF_INSTALL%%
+
 %check
 %{__rm} -rf $RPM_BUILD_ROOT/usr/src
 cd %{bdir}
@@ -234,6 +237,7 @@ cat /dev/null > debugsources.list
 %dir %{_datadir}/doc/%%NAME%%
 %{_datadir}/doc/%%NAME%%/*
 %%MODULE_FILES%%
+%%MODULE_DYNCONF_FILES%%
 
 %post
 if [ $1 -eq 1 ]; then

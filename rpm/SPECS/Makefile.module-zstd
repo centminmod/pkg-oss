@@ -38,3 +38,11 @@ https://github.com/tokers/zstd-nginx-module
 BANNER
 endef
 export MODULE_POST_zstd
+
+MODULE_DYNCONF_zstd = 40-zstd
+
+define MODULE_DYNLOAD_zstd
+load_module "modules/ngx_http_zstd_filter_module.so";
+load_module "modules/ngx_http_zstd_static_module.so";
+endef
+export MODULE_DYNLOAD_zstd
