@@ -176,10 +176,10 @@ jobs:
                 h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
                 for run in $(seq 1 ${RUNS}); do
                   OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
-                  REQS=$(echo "$OUT" | grep "req/s" | head -1 | awk "{print \$1}")
-                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oP "[\d.]+MB/s" | sed "s/MB\/s//")
-                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$4}" | sed "s/ms//")
-                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$3}" | sed "s/ms//")
+                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
+                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
+                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
+                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
                   echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
                   echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
                 done
@@ -247,10 +247,10 @@ jobs:
                 h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
                 for run in $(seq 1 ${RUNS}); do
                   OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
-                  REQS=$(echo "$OUT" | grep "req/s" | head -1 | awk "{print \$1}")
-                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oP "[\d.]+MB/s" | sed "s/MB\/s//")
-                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$4}" | sed "s/ms//")
-                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$3}" | sed "s/ms//")
+                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
+                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
+                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
+                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
                   echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
                   echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
                 done
@@ -291,10 +291,10 @@ jobs:
                 h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
                 for run in $(seq 1 ${RUNS}); do
                   OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
-                  REQS=$(echo "$OUT" | grep "req/s" | head -1 | awk "{print \$1}")
-                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oP "[\d.]+MB/s" | sed "s/MB\/s//")
-                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$4}" | sed "s/ms//")
-                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$3}" | sed "s/ms//")
+                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
+                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
+                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
+                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
                   echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
                   echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
                 done
@@ -358,10 +358,10 @@ jobs:
                 h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
                 for run in $(seq 1 ${RUNS}); do
                   OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
-                  REQS=$(echo "$OUT" | grep "req/s" | head -1 | awk "{print \$1}")
-                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oP "[\d.]+MB/s" | sed "s/MB\/s//")
-                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$4}" | sed "s/ms//")
-                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$3}" | sed "s/ms//")
+                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
+                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
+                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
+                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
                   echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
                   echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
                 done
@@ -454,19 +454,19 @@ jobs:
             B4=$(grep "^B,4," /tmp/averages.csv | cut -d',' -f3)
             C4=$(grep "^C,4," /tmp/averages.csv | cut -d',' -f3)
             D4=$(grep "^D,4," /tmp/averages.csv | cut -d',' -f3)
-            if [ -n "$A4" ] && [ -n "$C4" ]; then
+            if [ -n "$A4" ] && [ -n "$C4" ] && [ "$A4" != "0" ] && [ "$A4" != "0.00" ]; then
               delta=$(awk "BEGIN {printf \"%.1f\", ($C4-$A4)/$A4*100}")
               echo "| Optimization gain (no modules) A→C | +${delta}% |"
             fi
-            if [ -n "$B4" ] && [ -n "$D4" ]; then
+            if [ -n "$B4" ] && [ -n "$D4" ] && [ "$B4" != "0" ] && [ "$B4" != "0.00" ]; then
               delta=$(awk "BEGIN {printf \"%.1f\", ($D4-$B4)/$B4*100}")
               echo "| Optimization gain (with modules) B→D | +${delta}% |"
             fi
-            if [ -n "$A4" ] && [ -n "$B4" ]; then
+            if [ -n "$A4" ] && [ -n "$B4" ] && [ "$A4" != "0" ] && [ "$A4" != "0.00" ]; then
               delta=$(awk "BEGIN {printf \"%.1f\", ($B4-$A4)/$A4*100}")
               echo "| Module overhead (base) A→B | ${delta}% |"
             fi
-            if [ -n "$C4" ] && [ -n "$D4" ]; then
+            if [ -n "$C4" ] && [ -n "$D4" ] && [ "$C4" != "0" ] && [ "$C4" != "0.00" ]; then
               delta=$(awk "BEGIN {printf \"%.1f\", ($D4-$C4)/$C4*100}")
               echo "| Module overhead (optimized) C→D | ${delta}% |"
             fi
@@ -482,9 +482,9 @@ jobs:
               t2=$(grep "^${s},2," /tmp/averages.csv | cut -d',' -f3)
               t4=$(grep "^${s},4," /tmp/averages.csv | cut -d',' -f3)
               if [ -n "$t1" ] && [ -n "$t2" ] && [ -n "$t4" ]; then
-                d12=$(awk "BEGIN {printf \"%.1f\", ($t2-$t1)/$t1*100}")
-                d24=$(awk "BEGIN {printf \"%.1f\", ($t4-$t2)/$t2*100}")
-                d14=$(awk "BEGIN {printf \"%.1f\", ($t4-$t1)/$t1*100}")
+                d12=$(awk "BEGIN {if ($t1+0>0) printf \"%.1f\", ($t2-$t1)/$t1*100; else print \"N/A\"}")
+                d24=$(awk "BEGIN {if ($t2+0>0) printf \"%.1f\", ($t4-$t2)/$t2*100; else print \"N/A\"}")
+                d14=$(awk "BEGIN {if ($t1+0>0) printf \"%.1f\", ($t4-$t1)/$t1*100; else print \"N/A\"}")
                 echo "| ${s} | +${d12}% | +${d24}% | +${d14}% |"
               fi
             done
