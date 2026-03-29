@@ -603,11 +603,11 @@ jobs:
             echo "=== HTTP/2+TLS BENCHMARK (h2load)      ==="
             echo "=== ${BENCH_LABEL} ==="
             echo "=========================================="
-            h2load -n 10000 -c 50 -m 10 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1
+            h2load -n 10000 -c 50 -m 50 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1
             for run in 1 2 3; do
               echo ""
               echo "--- HTTP/2+TLS run ${run}/3 ---"
-              h2load -n 100000 -c 100 -m 10 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes"
+              h2load -n 100000 -c 100 -m 50 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes"
             done
 
             /usr/local/sbin/nginx -s quit 2>/dev/null || true

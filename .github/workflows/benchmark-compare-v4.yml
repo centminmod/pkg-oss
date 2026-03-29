@@ -1,4 +1,4 @@
-name: Benchmark Comparison (Base vs Optimized)
+name: Benchmark Comparison v4 (Base vs Optimized)
 run-name: "Benchmark: EL${{ inputs.el_version || '9' }} ${{ inputs.h2load_requests || '100000' }}req × ${{ inputs.runs || '3' }}runs"
 
 on:
@@ -100,21 +100,21 @@ jobs:
         run: |
           mkdir -p output-optimized && chmod 777 output-optimized
           docker run --rm \
-            -e CRYPTO=system -e ZLIB=system -e LTO=y -e MARCH=x86-64-v3 -e LINKER=mold \
+            -e CRYPTO=system -e ZLIB=system -e LTO=y -e MARCH=x86-64-v4 -e LINKER=mold \
             -v ${{ github.workspace }}/output-optimized:/output \
             rpmbuild:el${{ inputs.el_version || '9' }}
 
       - name: Build optimized module RPMs
         run: |
           docker run --rm \
-            -e CRYPTO=system -e ZLIB=system -e LTO=y -e MARCH=x86-64-v3 -e LINKER=mold \
+            -e CRYPTO=system -e ZLIB=system -e LTO=y -e MARCH=x86-64-v4 -e LINKER=mold \
             -v ${{ github.workspace }}/output-optimized:/output \
             rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
               set +e
               CRYPTO=${CRYPTO:-system}
               ZLIB=${ZLIB:-system}
               LTO=${LTO:-y}
-              MARCH=${MARCH:-x86-64-v3}
+              MARCH=${MARCH:-x86-64-v4}
               LINKER=${LINKER:-mold}
               cd /home/builder/contrib && make .sum-nginx
               ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOURCES/
@@ -547,7 +547,7 @@ jobs:
           <div class="info">
             <strong>Runner:</strong> ${RUNNER_CPU} (${RUNNER_CORES} cores, ${RUNNER_MEM}MB RAM)<br>
             <strong>Parameters:</strong> ${{ inputs.h2load_requests || '100000' }} requests, ${{ inputs.h2load_clients || '100' }} clients, ${{ inputs.h2load_streams || '10' }} streams, ${{ inputs.runs || '3' }} runs<br>
-            <strong>Scenarios:</strong> A=Base/NoMods, B=Base/AllMods, C=Optimized(LTO+v3+mold)/NoMods, D=Optimized/AllMods
+            <strong>Scenarios:</strong> A=Base/NoMods, B=Base/AllMods, C=Optimized(LTO+v4+mold)/NoMods, D=Optimized/AllMods
           </div>
           HTMLEOF2
 
