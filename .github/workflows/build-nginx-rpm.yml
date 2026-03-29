@@ -52,6 +52,17 @@ jobs:
       - name: Record workflow start time
         run: echo "WORKFLOW_START=$(date +%s)" >> $GITHUB_ENV
 
+      - name: Runner environment
+        run: |
+          echo "=== CPU ==="
+          lscpu
+          echo ""
+          echo "=== Memory ==="
+          free -mlt
+          echo ""
+          echo "=== Disk ==="
+          df -hT
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
