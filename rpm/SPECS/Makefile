@@ -384,11 +384,8 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 	dynconfname="$(MODULE_DYNCONF_$(call modname, $*))" ; \
 	if [ -n "$${dynconfname}" ]; then \
 		dynload=`echo "$$MODULE_DYNLOAD_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
-		dynconf_install="%{__mkdir} -p \$$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d$${CR}cat > \$$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/$${dynconfname}.conf << 'DYNEOF'$${CR}$${dynload}$${CR}DYNEOF" ; \
-		dynconf_files="%{cm_confdir}/dynamic-modules.d/$${dynconfname}.conf" ; \
-	else \
-		dynconf_install="" ; \
-		dynconf_files="" ; \
+		preinstall="$${preinstall}$${CR}%{__mkdir} -p \$$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d$${CR}cat > \$$RPM_BUILD_ROOT%{cm_confdir}/dynamic-modules.d/$${dynconfname}.conf << 'DYNEOF'$${CR}$${dynload}$${CR}DYNEOF" ; \
+		files="$${files}$${CR}%{cm_confdir}/dynamic-modules.d/$${dynconfname}.conf" ; \
 	fi ; \
 	sed $(MODULE_SPEC_TEMPLATE) \
 		-e "s#%%NAME%%#$${pkgname}#g" \
@@ -433,8 +430,6 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e "s#%%MODULE_PREINSTALL%%#$${preinstall}#g" \
 		-e "s#%%MODULE_FILES%%#$${files}#g" \
 		-e "s#%%MODULE_POST%%#$${post}#g" \
-		-e "s#%%MODULE_DYNCONF_INSTALL%%#$${dynconf_install}#g" \
-		-e "s#%%MODULE_DYNCONF_FILES%%#$${dynconf_files}#g" \
 		> $@.tmp && \
 	sed nginx-module-$*.rpm-changelog \
 		-e 's#%%TARGET_VERSION%%#$(TARGET_VERSION)#g' \
