@@ -571,8 +571,23 @@ jobs:
               echo "=== Phase 7B: Verify shipped Centmin Mod config ==="
               echo ""
 
-              # Install base nginx + all module RPMs
+              # Debug: show what files are inside the headers-more module RPM
+              echo "=== Debug: headers-more RPM contents ==="
+              hm_rpm=$(ls /output/nginx-module-headers-more*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
+              if [ -n "$hm_rpm" ]; then
+                rpm -qlp "$hm_rpm" 2>&1
+              else
+                echo "headers-more RPM not found in output"
+              fi
+              echo ""
+
+              # Debug: show base RPM contents (config files)
+              echo "=== Debug: base RPM config files ==="
               main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
+              rpm -qlp "$main_rpm" 2>&1 | grep -E "conf/|dynamic-modules"
+              echo ""
+
+              # Install base nginx + all module RPMs
               rpm -ivh --nodeps "$main_rpm" 2>&1
               for rpm_file in /output/nginx-module-*.x86_64.rpm; do
                 [ -f "$rpm_file" ] || continue
