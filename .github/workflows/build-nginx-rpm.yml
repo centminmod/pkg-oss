@@ -472,6 +472,124 @@ jobs:
               $NGINX_BIN -T -c "$TEST_CONF" 2>&1
             '
 
+      - name: Verify shipped config with modules
+        run: |
+          docker run --rm --user root \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ matrix.el_version }} bash -c '
+              echo "=== Phase 7B: Verify shipped Centmin Mod config ==="
+              echo ""
+
+              # Install base nginx + all module RPMs
+              main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
+              rpm -ivh --nodeps "$main_rpm" 2>&1
+              for rpm_file in /output/nginx-module-*.x86_64.rpm; do
+                [ -f "$rpm_file" ] || continue
+                echo "$rpm_file" | grep -q debuginfo && continue
+                echo "$rpm_file" | grep -q "\.src\.rpm" && continue
+                rpm -ivh --nodeps "$rpm_file" 2>&1
+              done
+
+              CONFDIR=/usr/local/nginx/conf
+              PASS=0; FAIL=0
+
+              echo ""
+              echo "=== Verify config files exist ==="
+              for f in nginx.conf dynamic-modules.conf dynamic-modules-includes.conf \
+                       maintenance.conf sitestatus.conf webp.conf ssl_include.conf \
+                       fastcgi_param_https_map.conf normalize_encoding.conf \
+                       default_phpupstream.conf vts_http.conf vts_server.conf \
+                       vts_mainserver.conf geoip.conf pagespeedadmin.conf \
+                       drop.conf staticfiles.conf php.conf errorpage.conf phpstatus.conf; do
+                if [ -f "$CONFDIR/$f" ]; then
+                  echo "PASS: $f exists"
+                  PASS=$((PASS+1))
+                else
+                  echo "FAIL: $f MISSING"
+                  FAIL=$((FAIL+1))
+                fi
+              done
+
+              echo ""
+              echo "=== Verify dynamic-modules.d/ drop-in files ==="
+              if [ -d "$CONFDIR/dynamic-modules.d" ]; then
+                echo "PASS: dynamic-modules.d/ directory exists"
+                PASS=$((PASS+1))
+                echo "Drop-in files:"
+                ls -la "$CONFDIR/dynamic-modules.d/" 2>&1
+                DROPIN_COUNT=$(ls "$CONFDIR/dynamic-modules.d/"*.conf 2>/dev/null | wc -l)
+                echo "Total drop-in configs: $DROPIN_COUNT"
+                if [ "$DROPIN_COUNT" -gt 0 ]; then
+                  echo "PASS: $DROPIN_COUNT drop-in files found"
+                  PASS=$((PASS+1))
+                  echo ""
+                  echo "Drop-in file contents:"
+                  for df in "$CONFDIR/dynamic-modules.d/"*.conf; do
+                    echo "--- $(basename $df) ---"
+                    cat "$df"
+                  done
+                else
+                  echo "FAIL: No drop-in files found"
+                  FAIL=$((FAIL+1))
+                fi
+              else
+                echo "FAIL: dynamic-modules.d/ directory missing"
+                FAIL=$((FAIL+1))
+              fi
+
+              echo ""
+              echo "=== Verify new directories ==="
+              for d in "$CONFDIR/ssl" "$CONFDIR/dynamic-modules.d" /var/log/nginx; do
+                if [ -d "$d" ]; then
+                  echo "PASS: $d exists"
+                  PASS=$((PASS+1))
+                else
+                  echo "FAIL: $d MISSING"
+                  FAIL=$((FAIL+1))
+                fi
+              done
+
+              echo ""
+              echo "=== nginx -t with shipped config (all modules loaded) ==="
+              if /usr/local/sbin/nginx -t 2>&1; then
+                echo "PASS: nginx -t succeeded with shipped config"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: nginx -t failed with shipped config"
+                FAIL=$((FAIL+1))
+                echo ""
+                echo "=== Debug: nginx -T (full config dump) ==="
+                /usr/local/sbin/nginx -T 2>&1 || true
+              fi
+
+              echo ""
+              echo "=== nginx start/stop test ==="
+              if /usr/local/sbin/nginx 2>&1; then
+                sleep 1
+                if curl -s -o /dev/null -w "%{http_code}" http://localhost/ | grep -q "200"; then
+                  echo "PASS: curl localhost returned 200"
+                  PASS=$((PASS+1))
+                else
+                  echo "WARN: curl localhost did not return 200"
+                fi
+                /usr/local/sbin/nginx -s stop 2>&1
+                echo "PASS: nginx started and stopped successfully"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: nginx failed to start"
+                FAIL=$((FAIL+1))
+              fi
+
+              echo ""
+              echo "========================================="
+              echo "Phase 7B Config Verification: $PASS passed, $FAIL failed"
+              echo "========================================="
+              if [ $FAIL -gt 0 ]; then
+                echo "WARNING: Some config verification checks failed"
+                exit 1
+              fi
+            '
+
       - name: Benchmark nginx
         env:
           BENCH_LABEL: "EL${{ matrix.el_version }} crypto=${{ inputs.crypto || 'system' }} zlib=${{ inputs.zlib || 'system' }}"
