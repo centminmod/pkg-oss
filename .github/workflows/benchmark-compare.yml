@@ -19,7 +19,7 @@ on:
         type: string
       h2load_streams:
         description: 'Max concurrent streams'
-        default: '10'
+        default: '50'
         type: string
       runs:
         description: 'Number of benchmark runs per scenario'
