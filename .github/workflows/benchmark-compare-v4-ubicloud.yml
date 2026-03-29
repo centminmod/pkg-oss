@@ -1,5 +1,5 @@
-name: Benchmark Comparison v4 (Base vs Optimized)
-run-name: "Benchmark: EL${{ inputs.el_version || '9' }} ${{ inputs.h2load_requests || '100000' }}req × ${{ inputs.runs || '3' }}runs"
+name: Benchmark Comparison v4 Ubicloud (Base vs Optimized)
+run-name: "Benchmark Ubicloud: EL${{ inputs.el_version || '9' }} ${{ inputs.h2load_requests || '100000' }}req × ${{ inputs.runs || '3' }}runs"
 
 on:
   workflow_dispatch:
