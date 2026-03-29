@@ -157,6 +157,7 @@ jobs:
                   fi
                   if grep -q "File not found:.*/modules/\*" "$LOG"; then
                     echo "  CAUSE: No .so files produced — module may not support dynamic loading"
+                    echo "  Check: Does the module config file have ngx_module_type declaration?"
                   fi
                   if grep -q "error:.*No such file" "$LOG"; then
                     echo "  CAUSE: Missing file at install time"
