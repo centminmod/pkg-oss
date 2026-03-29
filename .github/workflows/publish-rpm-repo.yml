@@ -1,0 +1,687 @@
+name: Publish RPMs to R2 Repository
+run-name: "Publish: ${{ inputs.variant }}/el${{ inputs.el_version }} (run ${{ inputs.run_id }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'Repository variant (maps to R2 directory)'
+        required: true
+        default: 'stable'
+        type: choice
+        options:
+          - stable
+          - awslc
+          - openssl
+          - optimized
+          - bolt
+      el_version:
+        description: 'EL version'
+        required: true
+        default: '9'
+        type: choice
+        options:
+          - '9'
+          - '8'
+          - '10'
+      run_id:
+        description: 'Source build workflow run ID (for artifact download)'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      variant:
+        description: 'Repository variant'
+        required: true
+        type: string
+      el_version:
+        description: 'EL version'
+        required: true
+        type: string
+      run_id:
+        description: 'Source build workflow run ID'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: publish-${{ inputs.variant }}-el${{ inputs.el_version }}
+  cancel-in-progress: false
+
+env:
+  R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+  R2_BUCKET: rpm-nginx
+  CUSTOM_DOMAIN: rpm-nginx.centminmod.com
+  AWS_DEFAULT_REGION: auto
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+jobs:
+  publish:
+    name: Publish ${{ inputs.variant }}/el${{ inputs.el_version }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Record workflow start time
+        run: echo "WORKFLOW_START=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Validate required secrets
+        run: |
+          echo "=== Pre-flight secrets validation ==="
+          MISSING=0
+          for secret_name in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY CF_ZONE_ID CF_API_TOKEN; do
+            case "$secret_name" in
+              R2_ACCOUNT_ID)       val="${{ secrets.R2_ACCOUNT_ID }}" ;;
+              R2_ACCESS_KEY_ID)    val="${{ secrets.R2_ACCESS_KEY_ID }}" ;;
+              R2_SECRET_ACCESS_KEY) val="${{ secrets.R2_SECRET_ACCESS_KEY }}" ;;
+              CF_ZONE_ID)          val="${{ secrets.CF_ZONE_ID }}" ;;
+              CF_API_TOKEN)        val="${{ secrets.CF_API_TOKEN }}" ;;
+            esac
+            if [ -z "$val" ]; then
+              echo "FAIL: Secret $secret_name is not configured"
+              MISSING=$((MISSING+1))
+            else
+              echo "PASS: $secret_name is set (${#val} chars)"
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo ""
+            echo "ERROR: $MISSING required secret(s) missing — configure them in GitHub repo settings"
+            exit 1
+          fi
+          echo "PASS: All required secrets configured"
+
+      - name: Runner environment
+        run: |
+          echo "=== CPU ==="
+          lscpu | head -5
+          echo ""
+          echo "=== Memory ==="
+          free -mlt
+          echo ""
+          echo "=== Disk ==="
+          df -hT
+          echo ""
+          echo "=== Tools ==="
+          echo "AWS CLI: $(aws --version 2>&1)"
+          echo "Docker:  $(docker --version 2>&1)"
+          echo "gh CLI:  $(gh --version 2>&1 | head -1)"
+
+      - name: Derive artifact name and R2 path
+        run: |
+          VARIANT="${{ inputs.variant }}"
+          EL_VERSION="${{ inputs.el_version }}"
+
+          echo "=== Input mapping ==="
+          echo "  variant:    $VARIANT"
+          echo "  el_version: $EL_VERSION"
+          echo "  run_id:     ${{ inputs.run_id }}"
+
+          # Validate bolt is EL9-only
+          if [ "$VARIANT" = "bolt" ] && [ "$EL_VERSION" != "9" ]; then
+            echo "ERROR: BOLT variant is only available for EL9 (got EL${EL_VERSION})"
+            exit 1
+          fi
+
+          # Map variant to artifact name suffix and R2 path
+          case "$VARIANT" in
+            stable|awslc|openssl)
+              ARTIFACT_NAME="nginx-rpms-el${EL_VERSION}"
+              ;;
+            optimized)
+              ARTIFACT_NAME="nginx-rpms-el${EL_VERSION}-optimized"
+              ;;
+            bolt)
+              ARTIFACT_NAME="nginx-rpms-el9-bolt"
+              ;;
+            *)
+              echo "ERROR: Unknown variant: $VARIANT"
+              exit 1
+              ;;
+          esac
+
+          REPO_PATH="${VARIANT}/el/${EL_VERSION}/x86_64"
+
+          echo ""
+          echo "=== Derived values ==="
+          echo "  ARTIFACT_NAME: $ARTIFACT_NAME"
+          echo "  REPO_PATH:     $REPO_PATH"
+          echo "  R2 dest:       s3://${R2_BUCKET}/${REPO_PATH}/"
+          echo "  Public URL:    https://${CUSTOM_DOMAIN}/${REPO_PATH}/"
+
+          echo "VARIANT=${VARIANT}" >> $GITHUB_ENV
+          echo "EL_VERSION=${EL_VERSION}" >> $GITHUB_ENV
+          echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> $GITHUB_ENV
+          echo "REPO_PATH=${REPO_PATH}" >> $GITHUB_ENV
+
+      - name: Download RPM artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== Downloading artifact: ${ARTIFACT_NAME} from run ${{ inputs.run_id }} ==="
+          gh run download "${{ inputs.run_id }}" \
+            --repo "${{ github.repository }}" \
+            --name "${ARTIFACT_NAME}" \
+            --dir ./downloaded-rpms
+
+          echo ""
+          echo "=== Downloaded files ==="
+          ls -lhS ./downloaded-rpms/
+          echo ""
+          echo "=== Total size ==="
+          du -sh ./downloaded-rpms/
+
+      - name: Verify complete package set
+        run: |
+          echo "=== Package set verification ==="
+
+          # Count base RPMs (exclude debuginfo, modules, src.rpm)
+          BASE_RPMS=$(ls downloaded-rpms/centminmod-nginx*.x86_64.rpm 2>/dev/null \
+            | grep -v debuginfo | grep -v debugsource | grep -v "nginx-module" || true)
+          BASE_COUNT=$(echo "$BASE_RPMS" | grep -c '\.rpm$' 2>/dev/null || echo 0)
+
+          # Count module RPMs (exclude debuginfo)
+          MODULE_RPMS=$(ls downloaded-rpms/nginx-module-*.x86_64.rpm 2>/dev/null \
+            | grep -v debuginfo | grep -v debugsource || true)
+          MODULE_COUNT=$(echo "$MODULE_RPMS" | grep -c '\.rpm$' 2>/dev/null || echo 0)
+
+          echo "Base RPMs:   $BASE_COUNT"
+          echo "Module RPMs: $MODULE_COUNT"
+          echo ""
+
+          # Verify crypto variant matches base RPM filename
+          if [ -n "$BASE_RPMS" ]; then
+            BASE_RPM_NAME=$(basename "$(echo "$BASE_RPMS" | head -1)")
+            echo "Base RPM: $BASE_RPM_NAME"
+
+            case "${VARIANT}" in
+              stable|optimized|bolt)
+                # Should NOT contain crypto suffix (awslc, openssl) between nginx and version
+                if echo "$BASE_RPM_NAME" | grep -qE "nginx-(awslc|openssl)-"; then
+                  echo "ERROR: Expected stable base RPM but found crypto variant: $BASE_RPM_NAME"
+                  exit 1
+                fi
+                echo "PASS: Base RPM matches stable variant"
+                ;;
+              awslc)
+                if ! echo "$BASE_RPM_NAME" | grep -q "nginx-awslc-"; then
+                  echo "ERROR: Expected awslc base RPM but got: $BASE_RPM_NAME"
+                  exit 1
+                fi
+                echo "PASS: Base RPM matches awslc variant"
+                ;;
+              openssl)
+                if ! echo "$BASE_RPM_NAME" | grep -q "nginx-openssl-"; then
+                  echo "ERROR: Expected openssl base RPM but got: $BASE_RPM_NAME"
+                  exit 1
+                fi
+                echo "PASS: Base RPM matches openssl variant"
+                ;;
+            esac
+          fi
+
+          echo ""
+          echo "--- RPM inventory ---"
+          for rpm in downloaded-rpms/*.x86_64.rpm; do
+            [ -f "$rpm" ] || continue
+            echo "  $(basename "$rpm") ($(du -h "$rpm" | cut -f1))"
+          done
+
+          echo ""
+          echo "--- Base RPM info ---"
+          if [ -n "$BASE_RPMS" ]; then
+            rpm -qip "$(echo "$BASE_RPMS" | head -1)" 2>/dev/null | grep -E "^(Name|Version|Release|Vendor|Architecture)" || true
+          fi
+
+          echo ""
+          EXPECTED_MODULES=26
+          if [ "$BASE_COUNT" -lt 1 ]; then
+            echo "FAIL: No base RPM found"
+            exit 1
+          fi
+          if [ "$MODULE_COUNT" -lt "$EXPECTED_MODULES" ]; then
+            echo "FAIL: Only $MODULE_COUNT module RPMs found (expected $EXPECTED_MODULES)"
+            echo ""
+            echo "Expected modules: accesskey brotli cache-purge dav-ext echo encrypted-session"
+            echo "  fancyindex geoip2 headers-more http-concat http-rdns http-redis"
+            echo "  image-filter length-hiding lua memc ndk njs redis2 set-misc srcache"
+            echo "  subs-filter testcookie vts xslt zstd"
+            exit 1
+          fi
+          echo "PASS: Complete package set ($BASE_COUNT base + $MODULE_COUNT modules)"
+
+      - name: Stage RPMs into repo directory
+        run: |
+          echo "=== Staging RPMs ==="
+          mkdir -p "repo/${REPO_PATH}"
+
+          # Copy x86_64 RPMs, exclude debuginfo and source RPMs
+          cp downloaded-rpms/*.x86_64.rpm "repo/${REPO_PATH}/"
+          rm -f "repo/${REPO_PATH}/"*-debuginfo-*.rpm
+          rm -f "repo/${REPO_PATH}/"*-debugsource-*.rpm
+
+          echo "=== Staged RPMs ==="
+          ls -lhS "repo/${REPO_PATH}/"
+          STAGED_COUNT=$(ls "repo/${REPO_PATH}/"*.rpm 2>/dev/null | wc -l)
+          echo ""
+          echo "=== Staged count: $STAGED_COUNT RPMs ==="
+
+      - name: Generate repository metadata (createrepo_c)
+        run: |
+          docker run --rm \
+            -v "$(pwd)/repo/${REPO_PATH}:/repo" \
+            almalinux:9 bash -c '
+              echo "=== Installing createrepo_c ==="
+              dnf -y install createrepo_c 2>&1 | tail -5
+              echo ""
+              echo "=== createrepo_c version ==="
+              createrepo_c --version
+              echo ""
+              echo "=== Generating repository metadata ==="
+              createrepo_c \
+                --compress-type gz \
+                --checksum sha256 \
+                --unique-md-filenames \
+                --workers $(nproc) \
+                --update \
+                --verbose \
+                /repo
+              echo ""
+              echo "=== Generated repodata ==="
+              ls -lh /repo/repodata/
+              echo ""
+              echo "=== repomd.xml content ==="
+              cat /repo/repodata/repomd.xml
+            '
+
+      - name: Verify repodata integrity
+        run: |
+          echo "=== Verify repodata files ==="
+          PASS=0; FAIL=0
+
+          if [ -f "repo/${REPO_PATH}/repodata/repomd.xml" ]; then
+            SIZE=$(wc -c < "repo/${REPO_PATH}/repodata/repomd.xml")
+            echo "PASS: repomd.xml exists ($SIZE bytes)"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: repomd.xml MISSING"
+            FAIL=$((FAIL+1))
+          fi
+
+          # Check hash-named metadata blobs
+          BLOB_COUNT=$(ls "repo/${REPO_PATH}/repodata/"*-*.xml.gz 2>/dev/null | wc -l)
+          echo "Hash-named metadata blobs: $BLOB_COUNT"
+          if [ "$BLOB_COUNT" -ge 3 ]; then
+            echo "PASS: Expected metadata blobs present (primary, filelists, other)"
+            PASS=$((PASS+1))
+          else
+            echo "FAIL: Too few metadata blobs ($BLOB_COUNT, expected >= 3)"
+            FAIL=$((FAIL+1))
+          fi
+
+          echo ""
+          echo "=== Repodata verification: $PASS passed, $FAIL failed ==="
+          if [ "$FAIL" -gt 0 ]; then
+            echo "ERROR: Repodata verification failed — aborting upload"
+            exit 1
+          fi
+
+      - name: GPG signing (Phase 8B — placeholder)
+        run: |
+          echo "GPG signing is Phase 8B — skipping for now"
+          echo "Future: gpg --batch --yes --detach-sign --armor repo/${REPO_PATH}/repodata/repomd.xml"
+
+      - name: 'Upload Phase 1: RPM files'
+        run: |
+          echo "=== Upload Phase 1: RPM files ==="
+          echo "Destination: s3://${R2_BUCKET}/${REPO_PATH}/"
+          aws s3 sync "repo/${REPO_PATH}/" "s3://${R2_BUCKET}/${REPO_PATH}/" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --exclude "repodata/*" \
+            --content-type "application/x-rpm" \
+            --cache-control "public, max-age=3600" \
+            --no-progress
+          echo "DONE: RPM files uploaded"
+
+      - name: 'Upload Phase 2: Metadata blobs'
+        run: |
+          echo "=== Upload Phase 2: Metadata blobs ==="
+          aws s3 sync "repo/${REPO_PATH}/repodata/" "s3://${R2_BUCKET}/${REPO_PATH}/repodata/" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --exclude "repomd.xml" \
+            --exclude "repomd.xml.asc" \
+            --content-type "application/gzip" \
+            --cache-control "public, max-age=120" \
+            --no-progress
+          echo "DONE: Metadata blobs uploaded"
+
+      - name: 'Upload Phase 3: repomd.xml entry point'
+        run: |
+          echo "=== Upload Phase 3: Entry point files ==="
+
+          # Upload repomd.xml.asc first (if exists — Phase 8B)
+          if [ -f "repo/${REPO_PATH}/repodata/repomd.xml.asc" ]; then
+            echo "Uploading repomd.xml.asc..."
+            aws s3 cp "repo/${REPO_PATH}/repodata/repomd.xml.asc" \
+              "s3://${R2_BUCKET}/${REPO_PATH}/repodata/repomd.xml.asc" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --content-type "application/pgp-signature" \
+              --cache-control "public, max-age=30"
+          else
+            echo "SKIP: repomd.xml.asc not present (GPG signing is Phase 8B)"
+          fi
+
+          # Upload repomd.xml LAST — all referenced files are already in place
+          echo "Uploading repomd.xml (entry point — LAST)..."
+          aws s3 cp "repo/${REPO_PATH}/repodata/repomd.xml" \
+            "s3://${R2_BUCKET}/${REPO_PATH}/repodata/repomd.xml" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "application/xml" \
+            --cache-control "public, max-age=30"
+          echo "DONE: Entry point updated"
+
+      - name: 'Upload Phase 4: CDN cache purge'
+        run: |
+          echo "=== Upload Phase 4: CDN cache purge ==="
+          REPOMD_URL="https://${CUSTOM_DOMAIN}/${REPO_PATH}/repodata/repomd.xml"
+          REPOMD_ASC_URL="https://${CUSTOM_DOMAIN}/${REPO_PATH}/repodata/repomd.xml.asc"
+          echo "Purging:"
+          echo "  $REPOMD_URL"
+          echo "  $REPOMD_ASC_URL"
+
+          PURGE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data "{\"files\":[\"${REPOMD_URL}\",\"${REPOMD_ASC_URL}\"]}")
+
+          HTTP_CODE=$(echo "$PURGE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$PURGE_RESPONSE" | grep -v "HTTP_CODE:")
+          echo ""
+          echo "Purge HTTP code: $HTTP_CODE"
+          echo "Purge response: $BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "WARNING: CDN cache purge returned HTTP $HTTP_CODE (non-fatal)"
+          else
+            echo "DONE: CDN cache purged"
+          fi
+
+      - name: Verify R2 upload (list objects)
+        if: always()
+        run: |
+          echo "=== Verify R2 objects ==="
+          aws s3 ls "s3://${R2_BUCKET}/${REPO_PATH}/" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --recursive --human-readable --summarize 2>&1 || echo "WARNING: Could not list R2 objects"
+
+      - name: Verify public access
+        run: |
+          echo "=== Verify public access via custom domain ==="
+          PASS=0; FAIL=0
+
+          # Check repomd.xml
+          echo "--- repomd.xml ---"
+          RESP=$(curl -sI "https://${CUSTOM_DOMAIN}/${REPO_PATH}/repodata/repomd.xml" 2>&1)
+          HTTP_CODE=$(echo "$RESP" | grep -i "^HTTP/" | tail -1 | awk '{print $2}')
+          CT=$(echo "$RESP" | grep -i "^content-type:" | head -1 | tr -d '\r')
+          CC=$(echo "$RESP" | grep -i "^cache-control:" | head -1 | tr -d '\r')
+          CF_CACHE=$(echo "$RESP" | grep -i "^cf-cache-status:" | head -1 | tr -d '\r')
+          echo "  HTTP: $HTTP_CODE"
+          echo "  $CT"
+          echo "  $CC"
+          echo "  $CF_CACHE"
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "  PASS: repomd.xml accessible"
+            PASS=$((PASS+1))
+          else
+            echo "  FAIL: repomd.xml returned HTTP $HTTP_CODE"
+            FAIL=$((FAIL+1))
+          fi
+
+          echo ""
+
+          # Check a sample RPM
+          RPM_FILE=$(ls "repo/${REPO_PATH}/"*.rpm 2>/dev/null | head -1 | xargs -r basename)
+          if [ -n "$RPM_FILE" ]; then
+            echo "--- $RPM_FILE ---"
+            RPM_RESP=$(curl -sI "https://${CUSTOM_DOMAIN}/${REPO_PATH}/${RPM_FILE}" 2>&1)
+            RPM_HTTP=$(echo "$RPM_RESP" | grep -i "^HTTP/" | tail -1 | awk '{print $2}')
+            RPM_CT=$(echo "$RPM_RESP" | grep -i "^content-type:" | head -1 | tr -d '\r')
+            RPM_CC=$(echo "$RPM_RESP" | grep -i "^cache-control:" | head -1 | tr -d '\r')
+            RPM_CF=$(echo "$RPM_RESP" | grep -i "^cf-cache-status:" | head -1 | tr -d '\r')
+            echo "  HTTP: $RPM_HTTP"
+            echo "  $RPM_CT"
+            echo "  $RPM_CC"
+            echo "  $RPM_CF"
+            if [ "$RPM_HTTP" = "200" ]; then
+              echo "  PASS: RPM accessible"
+              PASS=$((PASS+1))
+            else
+              echo "  FAIL: RPM returned HTTP $RPM_HTTP"
+              FAIL=$((FAIL+1))
+            fi
+          fi
+
+          echo ""
+          echo "=== Public access verification: $PASS passed, $FAIL failed ==="
+          if [ "$FAIL" -gt 0 ]; then
+            echo "ERROR: Public access verification failed"
+            exit 1
+          fi
+
+      - name: Validate repomd.xml from CDN
+        run: |
+          echo "=== Validate repomd.xml from CDN ==="
+          if ! REPOMD_CONTENT=$(curl -sf "https://${CUSTOM_DOMAIN}/${REPO_PATH}/repodata/repomd.xml"); then
+            echo "FAIL: Could not fetch repomd.xml from CDN (curl exit code: $?)"
+            exit 1
+          fi
+          echo "$REPOMD_CONTENT"
+          echo ""
+
+          # Verify it contains expected metadata types
+          PASS=0; FAIL=0
+          for mtype in primary filelists other; do
+            if echo "$REPOMD_CONTENT" | grep -q "type=\"$mtype\""; then
+              echo "PASS: repomd.xml references $mtype metadata"
+              PASS=$((PASS+1))
+            else
+              echo "FAIL: repomd.xml missing $mtype metadata reference"
+              FAIL=$((FAIL+1))
+            fi
+          done
+          echo ""
+          echo "=== repomd.xml validation: $PASS passed, $FAIL failed ==="
+
+      - name: Workflow timing summary
+        if: always()
+        run: |
+          WORKFLOW_END=$(date +%s)
+          ELAPSED=$((WORKFLOW_END - ${WORKFLOW_START:-$WORKFLOW_END}))
+          MINS=$((ELAPSED / 60))
+          SECS=$((ELAPSED % 60))
+          echo "=========================================="
+          echo "=== PUBLISH WORKFLOW SUMMARY           ==="
+          echo "=========================================="
+          echo "  Variant:     ${VARIANT:-${{ inputs.variant }}}"
+          echo "  EL version:  ${EL_VERSION:-${{ inputs.el_version }}}"
+          echo "  Source run:   ${{ inputs.run_id }}"
+          echo "  R2 path:     ${REPO_PATH:-unknown}"
+          echo "  Public URL:  https://${CUSTOM_DOMAIN}/${REPO_PATH:-unknown}/"
+          echo "  RPMs staged: $(ls repo/${REPO_PATH:-/dev/null}/*.rpm 2>/dev/null | wc -l || echo 0)"
+          echo "  Total time:  ${MINS}m ${SECS}s (${ELAPSED}s)"
+          echo "=========================================="
+
+  test-install:
+    name: Test dnf install from R2 (EL${{ inputs.el_version }})
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Test repo install in Docker
+        run: |
+          docker run --rm almalinux:${{ inputs.el_version }} bash -c '
+            set -e
+            VARIANT="${{ inputs.variant }}"
+            EL_MAJOR=$(rpm -E %{rhel})
+
+            echo "=========================================="
+            echo "=== R2 REPOSITORY INSTALL TEST         ==="
+            echo "=========================================="
+            echo "  Variant:    ${VARIANT}"
+            echo "  EL version: ${EL_MAJOR}"
+            echo ""
+
+            echo "=== Configure R2 RPM repository ==="
+            cat > /etc/yum.repos.d/centminmod-nginx-test.repo << REPO
+          [centminmod-nginx-test]
+          name=Centmin Mod Nginx Test - ${VARIANT} - EL${EL_MAJOR}
+          baseurl=https://rpm-nginx.centminmod.com/${VARIANT}/el/${EL_MAJOR}/\$basearch/
+          enabled=1
+          gpgcheck=0
+          metadata_expire=60
+          skip_if_unavailable=0
+          REPO
+            cat /etc/yum.repos.d/centminmod-nginx-test.repo
+            echo ""
+
+            echo "=== dnf makecache ==="
+            dnf makecache --repo=centminmod-nginx-test 2>&1
+            echo ""
+
+            echo "=== dnf repoquery: list available packages ==="
+            dnf repoquery --repo=centminmod-nginx-test \
+              --qf "%{name}-%{version}-%{release}.%{arch}" 2>/dev/null || true
+            PKG_COUNT=$(dnf repoquery --repo=centminmod-nginx-test 2>/dev/null | wc -l)
+            echo ""
+            echo "Total packages in repo: $PKG_COUNT"
+            echo ""
+
+            # Determine base package name for this variant
+            case "${VARIANT}" in
+              awslc)   BASE_PKG="centminmod-nginx-awslc" ;;
+              openssl) BASE_PKG="centminmod-nginx-openssl" ;;
+              *)       BASE_PKG="centminmod-nginx" ;;
+            esac
+
+            echo "=== dnf info ${BASE_PKG} ==="
+            dnf info --repo=centminmod-nginx-test "${BASE_PKG}" 2>&1 || {
+              echo "FAIL: ${BASE_PKG} not found in repo"
+              echo "Available packages:"
+              dnf repoquery --repo=centminmod-nginx-test 2>/dev/null
+              exit 1
+            }
+            echo ""
+
+            echo "=== dnf install base + all modules ==="
+            dnf install -y --repo=centminmod-nginx-test --allowerasing \
+              "${BASE_PKG}" "nginx-module-*" 2>&1
+            echo ""
+
+            echo "=== Verify installation ==="
+            PASS=0; FAIL=0
+
+            # Binary exists
+            if [ -x /usr/local/sbin/nginx ]; then
+              echo "PASS: nginx binary installed at /usr/local/sbin/nginx"
+              PASS=$((PASS+1))
+            else
+              echo "FAIL: nginx binary missing"
+              FAIL=$((FAIL+1))
+            fi
+
+            # nginx -V
+            echo ""
+            echo "=== nginx -V ==="
+            /usr/local/sbin/nginx -V 2>&1
+            PASS=$((PASS+1))
+
+            # Module .so files
+            SO_COUNT=$(ls /usr/local/nginx/modules/*.so 2>/dev/null | wc -l)
+            echo ""
+            echo "Module .so files installed: $SO_COUNT"
+            ls /usr/local/nginx/modules/*.so 2>/dev/null | while read f; do
+              echo "  $(basename "$f")"
+            done
+            if [ "$SO_COUNT" -ge 30 ]; then
+              echo "PASS: $SO_COUNT module .so files"
+              PASS=$((PASS+1))
+            else
+              echo "WARN: Only $SO_COUNT .so files (expected 30+)"
+            fi
+
+            # Config files
+            echo ""
+            echo "=== Config files ==="
+            if [ -f /usr/local/nginx/conf/nginx.conf ]; then
+              echo "PASS: nginx.conf exists"
+              PASS=$((PASS+1))
+            else
+              echo "FAIL: nginx.conf missing"
+              FAIL=$((FAIL+1))
+            fi
+
+            if [ -d /usr/local/nginx/conf/dynamic-modules.d ]; then
+              DROPIN_COUNT=$(ls /usr/local/nginx/conf/dynamic-modules.d/*.conf 2>/dev/null | wc -l)
+              echo "PASS: dynamic-modules.d/ exists ($DROPIN_COUNT drop-in files)"
+              PASS=$((PASS+1))
+            else
+              echo "FAIL: dynamic-modules.d/ missing"
+              FAIL=$((FAIL+1))
+            fi
+
+            # nginx -t config test
+            echo ""
+            echo "=== nginx -t ==="
+            if /usr/local/sbin/nginx -t 2>&1; then
+              echo "PASS: nginx -t config test"
+              PASS=$((PASS+1))
+            else
+              echo "FAIL: nginx -t failed"
+              FAIL=$((FAIL+1))
+              echo ""
+              echo "=== Debug: nginx -T ==="
+              /usr/local/sbin/nginx -T 2>&1 || true
+            fi
+
+            # Start, curl, stop
+            echo ""
+            echo "=== nginx start/curl/stop ==="
+            /usr/local/sbin/nginx 2>&1
+            sleep 1
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/)
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "PASS: curl localhost returned HTTP $HTTP_CODE"
+              PASS=$((PASS+1))
+            else
+              echo "FAIL: curl localhost returned HTTP $HTTP_CODE"
+              FAIL=$((FAIL+1))
+            fi
+            /usr/local/sbin/nginx -s stop 2>&1
+            echo "PASS: nginx stopped cleanly"
+            PASS=$((PASS+1))
+
+            # RPM package info
+            echo ""
+            echo "=== rpm -qi ${BASE_PKG} ==="
+            rpm -qi "${BASE_PKG}" 2>&1
+
+            echo ""
+            echo "=========================================="
+            echo "=== INSTALL TEST SUMMARY               ==="
+            echo "=========================================="
+            echo "  Variant:    ${VARIANT}"
+            echo "  EL version: ${EL_MAJOR}"
+            echo "  Base pkg:   ${BASE_PKG}"
+            echo "  Repo pkgs:  $PKG_COUNT packages"
+            echo "  .so files:  $SO_COUNT modules"
+            echo "  Passed:     $PASS"
+            echo "  Failed:     $FAIL"
+            echo "=========================================="
+            if [ "$FAIL" -gt 0 ]; then
+              echo "ERROR: Install test had $FAIL failures"
+              exit 1
+            fi
+          '
