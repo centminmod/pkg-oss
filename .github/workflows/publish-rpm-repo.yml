@@ -574,13 +574,13 @@ jobs:
             dnf info --repo=centminmod-nginx-test "${BASE_PKG}" 2>&1 || {
               echo "FAIL: ${BASE_PKG} not found in repo"
               echo "Available packages:"
-              dnf repoquery --repo=centminmod-nginx-test 2>/dev/null
+              dnf repoquery --repo=centminmod-nginx-test 2>/dev/null || true
               exit 1
             }
             echo ""
 
             echo "=== dnf install base + all modules ==="
-            dnf install -y --repo=centminmod-nginx-test --allowerasing \
+            dnf install -y --enablerepo=centminmod-nginx-test --allowerasing \
               "${BASE_PKG}" "nginx-module-*" 2>&1
             echo ""
 
