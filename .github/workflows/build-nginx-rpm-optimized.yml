@@ -705,8 +705,14 @@ jobs:
             -v ${{ github.workspace }}/output:/output \
             rpmbuild:el${{ matrix.el_version }} bash -c '
             echo "=== Installing nginx for benchmark ==="
-            main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
+            main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
             rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -3
+            # Install module RPMs (nginx.conf uses more_set_headers which needs headers-more)
+            for rpm_file in /output/nginx-module-*.x86_64.rpm; do
+              [ -f "$rpm_file" ] || continue
+              echo "$rpm_file" | grep -q debuginfo && continue
+              rpm -ivh --nodeps "$rpm_file" 2>&1 | tail -1
+            done
             dnf -y install httpd-tools nghttp2 2>&1 | tail -5
 
             # Generate self-signed TLS cert for HTTP/2 benchmark
