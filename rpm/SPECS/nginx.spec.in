@@ -206,6 +206,7 @@ BuildRequires: golang
 Provides: webserver
 Provides: nginx = %{base_version}-%{base_release}
 Provides: nginx-r%{base_version}
+Provides: centminmod-nginx%%CRYPTO_PACKAGE_SUFFIX%%-r%{base_version}
 Provides: centminmod-nginx-r%{base_version}
 Provides: centminmod-nginx-crypto(%%CRYPTO_NAME%%)
 Provides: centminmod-nginx-zlib(%%ZLIB_NAME%%)

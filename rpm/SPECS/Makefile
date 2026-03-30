@@ -73,6 +73,15 @@ AWSLC_VERSION=
 OPENSSL_CUSTOM_VERSION=
 endif
 
+# Crypto source for module specs (openssl needs tarball in module build)
+ifeq ($(CRYPTO),openssl)
+CRYPTO_MODULE_SOURCES=	Source51: openssl-$(OPENSSL_CUSTOM_VERSION).tar.gz
+CRYPTO_MODULE_PREP=	tar -C %{_builddir} -xzf %{SOURCE51}
+else
+CRYPTO_MODULE_SOURCES=
+CRYPTO_MODULE_PREP=
+endif
+
 # Compression library selection (default: system zlib)
 # Usage: make ZLIB=cloudflare nginx.spec
 ZLIB?=	system
@@ -373,6 +382,9 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 	done ; \
 	module_copyright=`echo $@ | sed -e "s#.spec#.copyright#"` ; \
 	cp -p $(DOCS)/$${module_copyright} $(SRCPATH) ; \
+	if [ -n "$(CRYPTO_SOURCES)" ]; then \
+		ln -sf $(CONTRIB)/tarballs/$(CRYPTO_SOURCES) $(SRCPATH)/ ; \
+	fi ; \
 	pkgname=$(shell echo $@ | cut -d '.' -f 1) ; \
 	pkgname=`echo $${pkgname} | sed -e "s#^nginx-#nginx$(MODULE_SUFFIX)-#"` ; \
 	definitions=`echo "$$MODULE_DEFINITIONS_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
@@ -409,6 +421,8 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e 's#%%MARCH%%#$(MARCH)#g' \
 		-e 's#%%LINKER%%#$(LINKER)#g' \
 		-e 's#%%AUTOFDO%%#$(AUTOFDO)#g' \
+		-e 's#%%CRYPTO_MODULE_SOURCES%%#$(CRYPTO_MODULE_SOURCES)#g' \
+		-e 's#%%CRYPTO_MODULE_PREP%%#$(CRYPTO_MODULE_PREP)#g' \
 		-e "s#%%COPYRIGHT_SOURCE%%#$${module_copyright}#g" \
 		-e "s#%%MODULE_SOURCES%%#$${sources}#g" \
 		-e "s#%%MODULE_PATCHES%%#$${patches}#g" \
