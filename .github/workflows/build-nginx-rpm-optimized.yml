@@ -325,8 +325,8 @@ jobs:
             NGINX_V=$(/usr/local/sbin/nginx -V 2>&1)
             echo "$NGINX_V"
             echo ""
-            echo ":: nginx -t (config syntax check) ::"
-            /usr/local/sbin/nginx -t 2>&1 || true
+            echo ":: nginx -t (base only, modules not loaded yet — may fail) ::"
+            /usr/local/sbin/nginx -t 2>&1 || echo "(expected: shipped config requires dynamic modules)"
             echo ""
             echo "=== Compiler verification ==="
             PASS=0
@@ -697,6 +697,7 @@ jobs:
             '
 
       - name: Benchmark nginx
+        continue-on-error: true
         env:
           BENCH_LABEL: "EL${{ matrix.el_version }} crypto=${{ inputs.crypto || 'system' }} zlib=${{ inputs.zlib || 'system' }} lto=${{ inputs.lto || 'n' }} march=${{ inputs.march || 'generic' }} linker=${{ inputs.linker || 'default' }}"
         run: |
@@ -713,45 +714,77 @@ jobs:
               echo "$rpm_file" | grep -q debuginfo && continue
               rpm -ivh --nodeps "$rpm_file" 2>&1 | tail -1
             done
-            dnf -y install httpd-tools nghttp2 2>&1 | tail -5
+            dnf -y install httpd-tools nghttp2 openssl 2>&1 | tail -5
 
             # Generate self-signed TLS cert for HTTP/2 benchmark
             openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
               -keyout /tmp/bench.key -out /tmp/bench.crt \
-              -subj "/CN=localhost" 2>/dev/null
+              -subj "/CN=localhost" 2>&1
+            ls -la /tmp/bench.crt /tmp/bench.key 2>/dev/null || echo "WARNING: TLS cert generation failed"
             mkdir -p /usr/local/nginx/conf/conf.d
-            printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / {\n        root /usr/local/nginx/html;\n    }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
+            printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:10m;\n    location / {\n        root /usr/local/nginx/html;\n    }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
+
+            BENCH_ERRORS=0
 
             /usr/local/sbin/nginx
             sleep 1
+
+            # Verify nginx started
+            if ! pgrep -x nginx > /dev/null 2>&1; then
+              echo "ERROR: nginx failed to start for benchmark"
+              echo "--- nginx error log ---"
+              cat /usr/local/nginx/logs/error.log 2>/dev/null || true
+              BENCH_ERRORS=1
+            else
+              echo "PASS: nginx started successfully (PID $(pgrep -o -x nginx))"
+            fi
 
             echo ""
             echo "=========================================="
             echo "=== HTTP/1.1 BENCHMARK (ab)            ==="
             echo "=== ${BENCH_LABEL} ==="
             echo "=========================================="
-            ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
-            for run in 1 2 3; do
-              echo ""
-              echo "--- HTTP/1.1 run ${run}/3 ---"
-              ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
-            done
+            if pgrep -x nginx > /dev/null 2>&1; then
+              ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+              for run in 1 2 3; do
+                echo ""
+                echo "--- HTTP/1.1 run ${run}/3 ---"
+                ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+            else
+              echo "SKIP: nginx not running"
+            fi
 
             echo ""
             echo "=========================================="
             echo "=== HTTP/2+TLS BENCHMARK (h2load)      ==="
             echo "=== ${BENCH_LABEL} ==="
             echo "=========================================="
-            h2load -n 10000 -c 50 -m 50 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1
-            for run in 1 2 3; do
-              echo ""
-              echo "--- HTTP/2+TLS run ${run}/3 ---"
-              h2load -n 100000 -c 100 -m 50 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes"
-            done
+            if pgrep -x nginx > /dev/null 2>&1; then
+              h2load -n 10000 -c 50 -m 50 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1
+              for run in 1 2 3; do
+                echo ""
+                echo "--- HTTP/2+TLS run ${run}/3 ---"
+                h2load -n 100000 -c 100 -m 50 -t 4 https://127.0.0.1:8443/ 2>&1 | tee /tmp/h2load_run${run}.txt | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes"
+                # Check for 100% failed requests
+                if grep -q "0 succeeded" /tmp/h2load_run${run}.txt 2>/dev/null; then
+                  echo "ERROR: h2load run ${run} had 0 succeeded requests"
+                  BENCH_ERRORS=1
+                fi
+              done
+            else
+              echo "SKIP: nginx not running"
+              BENCH_ERRORS=1
+            fi
 
             /usr/local/sbin/nginx -s quit 2>/dev/null || true
             echo ""
-            echo "=== Benchmark complete ==="
+            if [ "$BENCH_ERRORS" -gt 0 ]; then
+              echo "=== Benchmark completed with ERRORS ==="
+              exit 1
+            else
+              echo "=== Benchmark complete ==="
+            fi
           '
 
       - name: Workflow timing summary
