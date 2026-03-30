@@ -1,0 +1,774 @@
+name: Build Centmin Mod Nginx RPM (Optimized) - Ubicloud
+run-name: "Optimized Ubicloud RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }} lto=${{ inputs.lto }} march=${{ inputs.march }} linker=${{ inputs.linker }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      el_versions:
+        description: 'EL versions to build'
+        required: true
+        default: 'el9'
+        type: choice
+        options:
+          - el10
+          - el9
+          - el8
+          - el9-el10
+          - el8-el9-el10
+      crypto:
+        description: 'Crypto library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - awslc
+          - openssl
+      zlib:
+        description: 'Compression library'
+        required: true
+        default: 'cloudflare'
+        type: choice
+        options:
+          - cloudflare
+          - system
+      lto:
+        description: 'Link-Time Optimization'
+        required: true
+        default: 'n'
+        type: choice
+        options:
+          - 'n'
+          - 'y'
+      march:
+        description: 'Microarchitecture target'
+        required: true
+        default: 'generic'
+        type: choice
+        options:
+          - generic
+          - x86-64-v2
+          - x86-64-v3
+          - x86-64-v4
+      linker:
+        description: 'Linker selection (LTO+mold is experimental)'
+        required: true
+        default: 'default'
+        type: choice
+        options:
+          - default
+          - mold
+
+jobs:
+  build:
+    name: Build RPM (EL${{ matrix.el_version }}, crypto=${{ inputs.crypto || 'system' }}, zlib=${{ inputs.zlib || 'system' }}, lto=${{ inputs.lto || 'n' }}, march=${{ inputs.march || 'generic' }}, linker=${{ inputs.linker || 'default' }})
+    runs-on: ubicloud-standard-4
+    strategy:
+      fail-fast: false
+      matrix:
+        el_version: ${{ fromJSON(
+          inputs.el_versions == 'el8' && '["8"]' ||
+          inputs.el_versions == 'el9' && '["9"]' ||
+          inputs.el_versions == 'el10' && '["10"]' ||
+          inputs.el_versions == 'el9-el10' && '["9","10"]' ||
+          inputs.el_versions == 'el8-el9-el10' && '["8","9","10"]' ||
+          '["9"]'
+          ) }}
+    steps:
+      - name: Record workflow start time
+        run: echo "WORKFLOW_START=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Runner environment
+        run: |
+          echo "=== CPU ==="
+          lscpu
+          echo ""
+          echo "=== Memory ==="
+          free -mlt
+          echo ""
+          echo "=== Disk ==="
+          df -hT
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile.rpmbuild-el${{ matrix.el_version }} -t rpmbuild:el${{ matrix.el_version }} .
+
+      - name: Build RPMs
+        run: mkdir -p output && chmod 777 output && docker run --rm -e CRYPTO=${{ inputs.crypto || 'system' }} -e ZLIB=${{ inputs.zlib || 'system' }} -e LTO=${{ inputs.lto || 'n' }} -e MARCH=${{ inputs.march || 'generic' }} -e LINKER=${{ inputs.linker || 'default' }} -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
+
+      - name: Build module RPMs
+        run: |
+          docker run --rm \
+            -e CRYPTO=${{ inputs.crypto || 'system' }} \
+            -e ZLIB=${{ inputs.zlib || 'system' }} \
+            -e LTO=${{ inputs.lto || 'n' }} \
+            -e MARCH=${{ inputs.march || 'generic' }} \
+            -e LINKER=${{ inputs.linker || 'default' }} \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ matrix.el_version }} bash -c '
+              set +e
+              CRYPTO=${CRYPTO:-system}
+              ZLIB=${ZLIB:-system}
+              LTO=${LTO:-n}
+              MARCH=${MARCH:-generic}
+              LINKER=${LINKER:-default}
+              # Recreate nginx tarball symlink (needed by module-% prerequisite)
+              cd /home/builder/contrib && make .sum-nginx
+              ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOURCES/
+              # Recreate crypto/zlib symlinks if needed
+              if [ "$CRYPTO" = "awslc" ]; then
+                make .sum-awslc
+                ln -sf /home/builder/contrib/tarballs/aws-lc-*.tar.gz /home/builder/rpmbuild/SOURCES/
+              fi
+              if [ "$CRYPTO" = "openssl" ]; then
+                make .sum-openssl
+                ln -sf /home/builder/contrib/tarballs/openssl-*.tar.gz /home/builder/rpmbuild/SOURCES/
+              fi
+              if [ "$ZLIB" = "cloudflare" ]; then
+                make .sum-cf-zlib
+                ln -sf /home/builder/contrib/tarballs/zlib-*.tar.gz /home/builder/rpmbuild/SOURCES/
+              fi
+              cd /home/builder/rpmbuild/SPECS
+              mkdir -p /tmp/module-logs
+              PASS=0; FAIL=0; FAILED=""
+              BUILD_START=$(date +%s)
+              for mod in accesskey brotli cache-purge dav-ext echo encrypted-session \
+                fancyindex geoip2 headers-more http-concat http-rdns http-redis \
+                image-filter length-hiding lua memc ndk njs redis2 set-misc srcache \
+                subs-filter testcookie vts xslt zstd; do
+                echo ""; echo "===> Building module: ${mod}"
+                MOD_START=$(date +%s)
+                LOG="/tmp/module-logs/${mod}.log"
+                make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs \
+                  CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO} MARCH=${MARCH} \
+                  LINKER=${LINKER} AUTOFDO=${AUTOFDO:-none} \
+                  module-${mod} > "$LOG" 2>&1
+                RC=$?
+                MOD_END=$(date +%s)
+                if [ $RC -eq 0 ]; then
+                  SO_COUNT=$(find ../RPMS -name "nginx-module-${mod}*.rpm" -newer "$LOG" 2>/dev/null | wc -l)
+                  echo "PASS: module-${mod} ($((MOD_END-MOD_START))s) [${SO_COUNT} RPMs]"
+                  PASS=$((PASS+1))
+                else
+                  echo "FAIL: module-${mod} ($((MOD_END-MOD_START))s) [exit=$RC]"
+                  FAIL=$((FAIL+1))
+                  FAILED="${FAILED} ${mod}"
+                  echo "--- Failure diagnostics for ${mod} ---"
+                  echo "::group::${mod} build log (last 30 lines)"
+                  tail -30 "$LOG"
+                  echo "::endgroup::"
+                  if grep -q "No rule to make target.*rpm-changelog" "$LOG"; then
+                    echo "  CAUSE: Missing docs/nginx-module-${mod}.xml changelog file"
+                  fi
+                  if grep -q "Illegal char" "$LOG"; then
+                    echo "  CAUSE: Invalid character in RPM Version/Release field"
+                    grep "Illegal char" "$LOG"
+                  fi
+                  if grep -q "File not found:.*/modules/\*" "$LOG"; then
+                    echo "  CAUSE: No .so files produced — module may not support dynamic loading"
+                    echo "  Check: Does the module config file have ngx_module_type declaration?"
+                  fi
+                  if grep -q "error:.*No such file" "$LOG"; then
+                    echo "  CAUSE: Missing file at install time"
+                    grep "No such file" "$LOG" | tail -3
+                  fi
+                  if grep -q "configure: error" "$LOG"; then
+                    echo "  CAUSE: nginx configure failed"
+                    grep "configure: error" "$LOG" | tail -3
+                  fi
+                  if grep -qE "\.(c|cc|cpp):[0-9]+:[0-9]+: error:" "$LOG"; then
+                    echo "  CAUSE: Compilation error"
+                    grep -E "\.(c|cc|cpp):[0-9]+:[0-9]+: error:" "$LOG" | tail -5
+                  fi
+                  echo "--- End diagnostics for ${mod} ---"
+                fi
+              done
+              BUILD_END=$(date +%s)
+              echo ""
+              echo "=========================================="
+              echo "=== MODULE BUILD SUMMARY ==="
+              echo "=========================================="
+              echo "  Passed: $PASS"
+              echo "  Failed: $FAIL"
+              echo "  Total:  $((PASS+FAIL)) modules in $((BUILD_END-BUILD_START))s"
+              [ -n "$FAILED" ] && echo "  Failed:${FAILED}"
+              echo "=========================================="
+              find ../RPMS ../SRPMS -name "*.rpm" -exec cp -v {} /output/ \;
+            '
+
+      - name: List built RPMs
+        run: ls -lh output/
+
+      - name: Verify module RPMs
+        run: |
+          echo "=== Module RPM verification ==="
+          EXPECTED=26
+          MODULE_RPMS=$(ls output/nginx-module-*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v '\.src\.rpm' || true)
+          ACTUAL=$(echo "$MODULE_RPMS" | grep -c '\.rpm$' || echo 0)
+          echo "Expected: $EXPECTED module RPMs"
+          echo "Found: $ACTUAL module RPMs"
+          echo ""
+          echo "--- Module RPMs built ---"
+          if [ -n "$MODULE_RPMS" ]; then
+            echo "$MODULE_RPMS" | while read f; do
+              echo "  $(basename "$f") ($(du -h "$f" | cut -f1))"
+            done
+          else
+            echo "  No module RPMs found"
+          fi
+          echo ""
+          if [ "$ACTUAL" -ge "$EXPECTED" ]; then
+            echo "PASS: All $EXPECTED module RPMs built"
+          else
+            echo "WARNING: Only $ACTUAL/$EXPECTED module RPMs built (some modules may have failed)"
+          fi
+
+      - name: Verify module loading
+        run: |
+          docker run --rm --user root \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ matrix.el_version }} bash -c '
+              echo "=== Installing base nginx RPM ==="
+              main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
+              if [ -z "$main_rpm" ]; then
+                echo "FAIL: base nginx RPM not found"
+                exit 1
+              fi
+              rpm -ivh --nodeps "$main_rpm" 2>&1
+              echo ""
+              echo "=== Installing module RPMs ==="
+              INSTALLED=0; INSTALL_FAIL=0
+              for rpm_file in /output/nginx-module-*.x86_64.rpm; do
+                [ -f "$rpm_file" ] || continue
+                echo "$rpm_file" | grep -q debuginfo && continue
+                echo "$rpm_file" | grep -q '\.src\.rpm' && continue
+                mod_name=$(basename "$rpm_file")
+                if rpm -ivh --nodeps "$rpm_file" 2>&1; then
+                  INSTALLED=$((INSTALLED+1))
+                else
+                  echo "INSTALL FAIL: $mod_name"
+                  INSTALL_FAIL=$((INSTALL_FAIL+1))
+                fi
+              done
+              echo ""
+              echo "=== Module .so files in /usr/local/nginx/modules/ ==="
+              ls -la /usr/local/nginx/modules/*.so 2>/dev/null || echo "No .so files found"
+              SO_COUNT=$(ls /usr/local/nginx/modules/*.so 2>/dev/null | wc -l)
+              echo ""
+              echo "=== Module install summary: $INSTALLED installed, $INSTALL_FAIL failed, $SO_COUNT .so files ==="
+            '
+
+      - name: Verify RPM packages
+        run: |
+          echo "=== RPM package verification ==="
+          for rpm in output/*.rpm; do
+            [ -f "$rpm" ] || continue
+            echo ""
+            echo "--- $(basename $rpm) ---"
+            echo ""
+            echo ":: rpm -qip (package info) ::"
+            rpm -qip "$rpm"
+            echo ""
+            echo ":: rpm -qlp (file list) ::"
+            rpm -qlp "$rpm"
+            echo ""
+            echo ":: rpm -qp --provides ::"
+            rpm -qp --provides "$rpm"
+            echo ""
+            echo ":: rpm -qp --requires ::"
+            rpm -qp --requires "$rpm"
+            echo ""
+            echo ":: rpm -qp --conflicts ::"
+            rpm -qp --conflicts "$rpm" || true
+            echo ""
+            echo ":: rpm -Kp (signature/digest check) ::"
+            rpm -Kp "$rpm" || true
+            echo "==============================="
+          done
+
+      - name: Verify RPM paths
+        run: |
+          echo "=== Checking Centmin Mod paths in main RPM ==="
+          # Handle crypto-variant package names (centminmod-nginx-awslc-*.rpm etc.)
+          main_rpm=$(ls output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
+          if [ -n "$main_rpm" ]; then
+            echo "Checking: $main_rpm"
+            rpm -qlp "$main_rpm" | grep -c '/usr/local/nginx' && echo "PASS: /usr/local/nginx paths found" || echo "FAIL: no /usr/local/nginx paths"
+            rpm -qlp "$main_rpm" | grep -c '/usr/local/sbin/nginx' && echo "PASS: /usr/local/sbin/nginx binary found" || echo "FAIL: no /usr/local/sbin/nginx"
+            rpm -qip "$main_rpm" | grep -q 'centminmod-nginx' && echo "PASS: package name is centminmod-nginx" || echo "FAIL: wrong package name"
+            rpm -qip "$main_rpm" | grep -q 'Centmin Mod' && echo "PASS: vendor is Centmin Mod" || echo "FAIL: wrong vendor"
+            rpm -qp --provides "$main_rpm" | grep -q 'nginx =' && echo "PASS: provides nginx compatibility" || echo "FAIL: missing nginx provides"
+            rpm -qp --conflicts "$main_rpm" | grep -q 'nginx' && echo "PASS: conflicts with stock nginx" || echo "FAIL: missing nginx conflicts"
+          else
+            echo "FAIL: main RPM not found"
+            exit 1
+          fi
+
+      - name: Verify nginx -V output
+        env:
+          INPUT_LTO: ${{ inputs.lto || 'n' }}
+          INPUT_MARCH: ${{ inputs.march || 'generic' }}
+          INPUT_LINKER: ${{ inputs.linker || 'default' }}
+        run: |
+          docker run --rm --user root -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }} bash -c '
+            echo "=== Installing RPM and running nginx -V ==="
+            main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
+            if [ -z "$main_rpm" ]; then
+              echo "FAIL: main RPM not found"
+              exit 1
+            fi
+            rpm -ivh --nodeps "$main_rpm" 2>&1
+            echo ""
+            echo ":: nginx -V ::"
+            NGINX_V=$(/usr/local/sbin/nginx -V 2>&1)
+            echo "$NGINX_V"
+            echo ""
+            echo ":: nginx -t (config syntax check) ::"
+            /usr/local/sbin/nginx -t 2>&1 || true
+            echo ""
+            echo "=== Compiler verification ==="
+            PASS=0
+            FAIL=0
+            echo ":: Checking GCC version in built binary ::"
+            if echo "$NGINX_V" | grep -qiE "gcc [0-9]+\.[0-9]+"; then
+              GCC_USED=$(echo "$NGINX_V" | grep -oiE "gcc [0-9]+\.[0-9]+\.[0-9]+" | head -1)
+              echo "Built with: $GCC_USED"
+              EL_VERSION=$(rpm -E %{rhel})
+              case "$EL_VERSION" in
+                8) EXPECTED_GCC="14" ;;
+                9) EXPECTED_GCC="15" ;;
+                10) EXPECTED_GCC="14" ;;
+              esac
+              if echo "$GCC_USED" | grep -q "gcc ${EXPECTED_GCC}\."; then
+                echo "PASS: GCC major version matches expected ($EXPECTED_GCC) for EL${EL_VERSION}"
+                PASS=$((PASS+1))
+              else
+                echo "WARN: GCC version mismatch - expected GCC ${EXPECTED_GCC}, got $GCC_USED"
+                FAIL=$((FAIL+1))
+              fi
+            fi
+            echo ""
+            echo ":: Checking compiler flags in nginx -V ::"
+            for flag in "-O3" "-fstack-protector-strong" "-fstack-clash-protection" "-Wimplicit-fallthrough=0" "--param=ssp-buffer-size=4"; do
+              if echo "$NGINX_V" | grep -q -- "$flag"; then
+                echo "PASS: $flag found"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: $flag NOT found"
+                FAIL=$((FAIL+1))
+              fi
+            done
+            echo ""
+            echo ":: Checking FORTIFY_SOURCE level ::"
+            EL_VERSION=$(rpm -E %{rhel})
+            if [ "$EL_VERSION" = "10" ]; then
+              EXPECTED_FORTIFY="FORTIFY_SOURCE=3"
+            else
+              EXPECTED_FORTIFY="FORTIFY_SOURCE=2"
+            fi
+            if echo "$NGINX_V" | grep -q "$EXPECTED_FORTIFY"; then
+              echo "PASS: $EXPECTED_FORTIFY found (correct for EL${EL_VERSION})"
+              PASS=$((PASS+1))
+            else
+              echo "FAIL: $EXPECTED_FORTIFY NOT found"
+              FAIL=$((FAIL+1))
+            fi
+            echo ""
+            echo ":: Checking linker flags ::"
+            for flag in "--as-needed" "-Bsymbolic-functions"; do
+              if echo "$NGINX_V" | grep -q -- "$flag"; then
+                echo "PASS: $flag found"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: $flag NOT found"
+                FAIL=$((FAIL+1))
+              fi
+            done
+            echo ""
+            echo "=== Phase 5A optimization verification ==="
+            echo ":: Checking LTO flags (LTO='"'"'${{ inputs.lto || 'n' }}'"'"') ::"
+            if [ "${{ inputs.lto || 'n' }}" = "y" ]; then
+              if echo "$NGINX_V" | grep -q -- "-flto=auto"; then
+                echo "PASS: -flto=auto found (LTO enabled)"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: -flto=auto NOT found but LTO=y was requested"
+                FAIL=$((FAIL+1))
+              fi
+            else
+              if echo "$NGINX_V" | grep -q -- "-flto"; then
+                echo "FAIL: -flto found but LTO=n (should not be present)"
+                FAIL=$((FAIL+1))
+              else
+                echo "PASS: No -flto flag (LTO disabled as expected)"
+                PASS=$((PASS+1))
+              fi
+            fi
+            echo ""
+            echo ":: Checking MARCH flags (MARCH='"'"'${{ inputs.march || 'generic' }}'"'"') ::"
+            if [ "${{ inputs.march || 'generic' }}" != "generic" ]; then
+              if echo "$NGINX_V" | grep -q -- "-march=${{ inputs.march || 'generic' }}"; then
+                echo "PASS: -march=${{ inputs.march || 'generic' }} found"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: -march=${{ inputs.march || 'generic' }} NOT found"
+                FAIL=$((FAIL+1))
+              fi
+            else
+              if echo "$NGINX_V" | grep -q -- "-march="; then
+                echo "FAIL: -march= found but MARCH=generic (should not be present)"
+                FAIL=$((FAIL+1))
+              else
+                echo "PASS: No -march= flag (generic as expected)"
+                PASS=$((PASS+1))
+              fi
+            fi
+            echo ""
+            echo ":: Checking LINKER flags (LINKER='"'"'${{ inputs.linker || 'default' }}'"'"') ::"
+            if [ "${{ inputs.linker || 'default' }}" = "mold" ]; then
+              if echo "$NGINX_V" | grep -q -- "-fuse-ld=mold"; then
+                echo "PASS: -fuse-ld=mold found (mold linker enabled)"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: -fuse-ld=mold NOT found but LINKER=mold was requested"
+                FAIL=$((FAIL+1))
+              fi
+            else
+              if echo "$NGINX_V" | grep -q -- "-fuse-ld=mold"; then
+                echo "FAIL: -fuse-ld=mold found but LINKER=default (should not be present)"
+                FAIL=$((FAIL+1))
+              else
+                echo "PASS: No -fuse-ld=mold flag (default linker as expected)"
+                PASS=$((PASS+1))
+              fi
+            fi
+            echo ""
+            echo "=== Verification summary: $PASS passed, $FAIL failed ==="
+            if [ "$FAIL" -gt 0 ]; then
+              echo "WARNING: Some verification checks failed"
+            fi
+          '
+
+      - name: Verify nginx -V and module loading
+        run: |
+          docker run --rm --user root \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ matrix.el_version }} bash -c '
+              # Install base nginx + all module RPMs
+              main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
+              rpm -ivh --nodeps "$main_rpm" 2>&1
+              for rpm_file in /output/nginx-module-*.x86_64.rpm; do
+                [ -f "$rpm_file" ] || continue
+                echo "$rpm_file" | grep -q debuginfo && continue
+                echo "$rpm_file" | grep -q "\.src\.rpm" && continue
+                rpm -ivh --nodeps "$rpm_file" 2>&1
+              done
+
+              NGINX_BIN=/usr/local/sbin/nginx
+              MODULE_DIR=/usr/local/nginx/modules
+
+              echo ""
+              echo "=== nginx -V before module load test ==="
+              $NGINX_BIN -V 2>&1
+              echo ""
+
+              # Build load_module config — NDK must load first (lua, encrypted-session, set-misc depend on it)
+              # Skip -debug.so files (only loadable by nginx-debug binary)
+              MODULES_CONF=/tmp/modules-load-test.conf
+              echo "# Auto-generated module load test" > "$MODULES_CONF"
+
+              # NDK first (dependency for other modules)
+              if [ -f "$MODULE_DIR/ndk_http_module.so" ]; then
+                echo "load_module $MODULE_DIR/ndk_http_module.so;" >> "$MODULES_CONF"
+              fi
+
+              # All other non-debug modules (skip ndk — already loaded above)
+              for so in "$MODULE_DIR"/*.so; do
+                [ -f "$so" ] || continue
+                basename "$so" | grep -q "\-debug\.so$" && continue
+                basename "$so" | grep -q "^ndk_http_module.so$" && continue
+                echo "load_module $so;" >> "$MODULES_CONF"
+              done
+
+              echo "=== Module load_module directives ==="
+              cat "$MODULES_CONF"
+              DIRECTIVE_COUNT=$(grep -c "^load_module" "$MODULES_CONF")
+              echo ""
+              echo "Total load_module directives: $DIRECTIVE_COUNT"
+
+              # Create minimal test config that includes modules
+              TEST_CONF=/tmp/nginx-module-test.conf
+              cat "$MODULES_CONF" > "$TEST_CONF"
+              cat >> "$TEST_CONF" << NGINX_CONF
+          events {
+              worker_connections 64;
+          }
+          http {
+              server {
+                  listen 127.0.0.1:18080;
+                  server_name localhost;
+                  location / { return 200 "ok"; }
+              }
+          }
+          NGINX_CONF
+
+              echo ""
+              echo "=== nginx -t (module load test) ==="
+              LOAD_PASS=0; LOAD_FAIL=0; FAILED_MODULES=""
+              if $NGINX_BIN -t -c "$TEST_CONF" 2>&1; then
+                echo ""
+                echo "PASS: All $DIRECTIVE_COUNT modules loaded successfully"
+                LOAD_PASS=$DIRECTIVE_COUNT
+              else
+                echo ""
+                echo "WARN: Some modules failed to load, testing individually..."
+                # Test each module individually to identify failures
+                for so in "$MODULE_DIR"/*.so; do
+                  [ -f "$so" ] || continue
+                  MOD_NAME=$(basename "$so")
+                  echo "$MOD_NAME" | grep -q "\-debug\.so$" && continue
+                  SINGLE_CONF=/tmp/test-single.conf
+                  # NDK-dependent modules need ndk loaded first
+                  if echo "$MOD_NAME" | grep -qE "(lua|encrypted_session|set_misc)"; then
+                    echo "load_module $MODULE_DIR/ndk_http_module.so;" > "$SINGLE_CONF"
+                  else
+                    > "$SINGLE_CONF"
+                  fi
+                  echo "load_module $so;" >> "$SINGLE_CONF"
+                  cat >> "$SINGLE_CONF" << NGINX_CONF2
+          events { worker_connections 64; }
+          http { server { listen 127.0.0.1:18080; server_name localhost; location / { return 200 ok; } } }
+          NGINX_CONF2
+                  if $NGINX_BIN -t -c "$SINGLE_CONF" 2>&1; then
+                    LOAD_PASS=$((LOAD_PASS+1))
+                  else
+                    echo "FAIL to load: $MOD_NAME"
+                    $NGINX_BIN -t -c "$SINGLE_CONF" 2>&1 || true
+                    LOAD_FAIL=$((LOAD_FAIL+1))
+                    FAILED_MODULES="$FAILED_MODULES $MOD_NAME"
+                  fi
+                done
+                echo ""
+                echo "=== Individual module load results: $LOAD_PASS passed, $LOAD_FAIL failed ==="
+                [ -n "$FAILED_MODULES" ] && echo "Failed modules:$FAILED_MODULES"
+              fi
+
+              echo ""
+              echo "=== nginx -V after module load test ==="
+              $NGINX_BIN -V 2>&1
+              echo ""
+              echo "=== nginx -T (effective config with modules) ==="
+              $NGINX_BIN -T -c "$TEST_CONF" 2>&1
+            '
+
+      - name: Verify shipped config with modules
+        run: |
+          docker run --rm --user root \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ matrix.el_version }} bash -c '
+              echo "=== Phase 7B: Verify shipped Centmin Mod config ==="
+              echo ""
+
+              # Debug: show what files are inside the headers-more module RPM
+              echo "=== Debug: headers-more RPM contents ==="
+              hm_rpm=$(ls /output/nginx-module-headers-more*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
+              if [ -n "$hm_rpm" ]; then
+                rpm -qlp "$hm_rpm" 2>&1
+              else
+                echo "headers-more RPM not found in output"
+              fi
+              echo ""
+
+              # Debug: show base RPM contents (config files)
+              echo "=== Debug: base RPM config files ==="
+              main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
+              rpm -qlp "$main_rpm" 2>&1 | grep -E "conf/|dynamic-modules"
+              echo ""
+
+              # Install base nginx + all module RPMs
+              rpm -ivh --nodeps "$main_rpm" 2>&1
+              for rpm_file in /output/nginx-module-*.x86_64.rpm; do
+                [ -f "$rpm_file" ] || continue
+                echo "$rpm_file" | grep -q debuginfo && continue
+                echo "$rpm_file" | grep -q "\.src\.rpm" && continue
+                rpm -ivh --nodeps "$rpm_file" 2>&1
+              done
+
+              CONFDIR=/usr/local/nginx/conf
+              PASS=0; FAIL=0
+
+              echo ""
+              echo "=== Verify config files exist ==="
+              for f in nginx.conf dynamic-modules.conf dynamic-modules-includes.conf \
+                       maintenance.conf sitestatus.conf webp.conf ssl_include.conf \
+                       fastcgi_param_https_map.conf normalize_encoding.conf \
+                       default_phpupstream.conf vts_http.conf vts_server.conf \
+                       vts_mainserver.conf geoip.conf pagespeedadmin.conf \
+                       drop.conf staticfiles.conf php.conf errorpage.conf phpstatus.conf; do
+                if [ -f "$CONFDIR/$f" ]; then
+                  echo "PASS: $f exists"
+                  PASS=$((PASS+1))
+                else
+                  echo "FAIL: $f MISSING"
+                  FAIL=$((FAIL+1))
+                fi
+              done
+
+              echo ""
+              echo "=== Verify dynamic-modules.d/ drop-in files ==="
+              if [ -d "$CONFDIR/dynamic-modules.d" ]; then
+                echo "PASS: dynamic-modules.d/ directory exists"
+                PASS=$((PASS+1))
+                echo "Drop-in files:"
+                ls -la "$CONFDIR/dynamic-modules.d/" 2>&1
+                DROPIN_COUNT=$(ls "$CONFDIR/dynamic-modules.d/"*.conf 2>/dev/null | wc -l)
+                echo "Total drop-in configs: $DROPIN_COUNT"
+                if [ "$DROPIN_COUNT" -gt 0 ]; then
+                  echo "PASS: $DROPIN_COUNT drop-in files found"
+                  PASS=$((PASS+1))
+                  echo ""
+                  echo "Drop-in file contents:"
+                  for df in "$CONFDIR/dynamic-modules.d/"*.conf; do
+                    echo "--- $(basename $df) ---"
+                    cat "$df"
+                  done
+                else
+                  echo "FAIL: No drop-in files found"
+                  FAIL=$((FAIL+1))
+                fi
+              else
+                echo "FAIL: dynamic-modules.d/ directory missing"
+                FAIL=$((FAIL+1))
+              fi
+
+              echo ""
+              echo "=== Verify new directories ==="
+              for d in "$CONFDIR/ssl" "$CONFDIR/dynamic-modules.d" /var/log/nginx; do
+                if [ -d "$d" ]; then
+                  echo "PASS: $d exists"
+                  PASS=$((PASS+1))
+                else
+                  echo "FAIL: $d MISSING"
+                  FAIL=$((FAIL+1))
+                fi
+              done
+
+              echo ""
+              echo "=== nginx -t with shipped config (all modules loaded) ==="
+              if /usr/local/sbin/nginx -t 2>&1; then
+                echo "PASS: nginx -t succeeded with shipped config"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: nginx -t failed with shipped config"
+                FAIL=$((FAIL+1))
+                echo ""
+                echo "=== Debug: nginx -T (full config dump) ==="
+                /usr/local/sbin/nginx -T 2>&1 || true
+              fi
+
+              echo ""
+              echo "=== nginx start/stop test ==="
+              if /usr/local/sbin/nginx 2>&1; then
+                sleep 1
+                if curl -s -o /dev/null -w "%{http_code}" http://localhost/ | grep -q "200"; then
+                  echo "PASS: curl localhost returned 200"
+                  PASS=$((PASS+1))
+                else
+                  echo "WARN: curl localhost did not return 200"
+                fi
+                /usr/local/sbin/nginx -s stop 2>&1
+                echo "PASS: nginx started and stopped successfully"
+                PASS=$((PASS+1))
+              else
+                echo "FAIL: nginx failed to start"
+                FAIL=$((FAIL+1))
+              fi
+
+              echo ""
+              echo "========================================="
+              echo "Phase 7B Config Verification: $PASS passed, $FAIL failed"
+              echo "========================================="
+              if [ $FAIL -gt 0 ]; then
+                echo "WARNING: Some config verification checks failed"
+                exit 1
+              fi
+            '
+
+      - name: Benchmark nginx
+        env:
+          BENCH_LABEL: "EL${{ matrix.el_version }} crypto=${{ inputs.crypto || 'system' }} zlib=${{ inputs.zlib || 'system' }} lto=${{ inputs.lto || 'n' }} march=${{ inputs.march || 'generic' }} linker=${{ inputs.linker || 'default' }}"
+        run: |
+          docker run --rm --user root \
+            -e BENCH_LABEL="${BENCH_LABEL}" \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el${{ matrix.el_version }} bash -c '
+            echo "=== Installing nginx for benchmark ==="
+            main_rpm=$(ls /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | head -1)
+            rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -3
+            dnf -y install httpd-tools nghttp2 2>&1 | tail -5
+
+            # Generate self-signed TLS cert for HTTP/2 benchmark
+            openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+              -keyout /tmp/bench.key -out /tmp/bench.crt \
+              -subj "/CN=localhost" 2>/dev/null
+            mkdir -p /usr/local/nginx/conf/conf.d
+            printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / {\n        root /usr/local/nginx/html;\n    }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
+
+            /usr/local/sbin/nginx
+            sleep 1
+
+            echo ""
+            echo "=========================================="
+            echo "=== HTTP/1.1 BENCHMARK (ab)            ==="
+            echo "=== ${BENCH_LABEL} ==="
+            echo "=========================================="
+            ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+            for run in 1 2 3; do
+              echo ""
+              echo "--- HTTP/1.1 run ${run}/3 ---"
+              ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+            done
+
+            echo ""
+            echo "=========================================="
+            echo "=== HTTP/2+TLS BENCHMARK (h2load)      ==="
+            echo "=== ${BENCH_LABEL} ==="
+            echo "=========================================="
+            h2load -n 10000 -c 50 -m 50 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1
+            for run in 1 2 3; do
+              echo ""
+              echo "--- HTTP/2+TLS run ${run}/3 ---"
+              h2load -n 100000 -c 100 -m 50 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes"
+            done
+
+            /usr/local/sbin/nginx -s quit 2>/dev/null || true
+            echo ""
+            echo "=== Benchmark complete ==="
+          '
+
+      - name: Workflow timing summary
+        if: always()
+        run: |
+          WORKFLOW_END=$(date +%s)
+          ELAPSED=$((WORKFLOW_END - WORKFLOW_START))
+          MINS=$((ELAPSED / 60))
+          SECS=$((ELAPSED % 60))
+          echo "=========================================="
+          echo "=== WORKFLOW TIMING SUMMARY             ==="
+          echo "=========================================="
+          echo "  EL version:  ${{ matrix.el_version }}"
+          echo "  Crypto:      ${{ inputs.crypto || 'system' }}"
+          echo "  Zlib:        ${{ inputs.zlib || 'system' }}"
+          echo "  LTO:         ${{ inputs.lto || 'n' }}"
+          echo "  March:       ${{ inputs.march || 'generic' }}"
+          echo "  Linker:      ${{ inputs.linker || 'default' }}"
+          echo "  Total time:  ${MINS}m ${SECS}s (${ELAPSED}s)"
+          echo "=========================================="
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-rpms-el${{ matrix.el_version }}-optimized${{ inputs.march == 'x86-64-v4' && '-v4' || '' }}
+          path: output/*.rpm

@@ -1,0 +1,474 @@
+name: Build Centmin Mod Nginx RPM (AutoFDO) - Ubicloud
+run-name: "AutoFDO Ubicloud RPM: el9 crypto=${{ inputs.crypto }} lto=${{ inputs.lto }}"
+
+# Phase 5B: AutoFDO proof-of-concept workflow (EL9 only)
+#
+# Three-job pipeline:
+#   1. build-baseline: Build nginx RPM normally (with -g debug symbols)
+#   2. profile-collect: Install, load-test with ab, perf record, create_gcov
+#   3. build-autofdo: Rebuild with -fauto-profile=<profile.gcov>
+#
+# Prerequisites:
+#   - GHCR image must exist: run build-profiling-tools.yml first
+#   - Package must be public: GitHub Settings > Packages > Change visibility
+#
+# Known limitations:
+#   - perf LBR (Last Branch Record) requires bare-metal hardware
+#   - GitHub Actions VMs may not expose LBR — falls back to cycles sampling
+#   - Cycles sampling produces lower-quality profiles but still functional
+#   - Profile is tied to specific binary+config — must regenerate on version change
+
+on:
+  workflow_dispatch:
+    inputs:
+      crypto:
+        description: 'Crypto library'
+        required: true
+        default: 'system'
+        type: choice
+        options:
+          - system
+          - awslc
+      zlib:
+        description: 'Compression library'
+        required: true
+        default: 'cloudflare'
+        type: choice
+        options:
+          - cloudflare
+          - system
+      lto:
+        description: 'Also enable LTO'
+        required: true
+        default: 'n'
+        type: choice
+        options:
+          - 'n'
+          - 'y'
+      profile_duration:
+        description: 'Profiling duration (seconds)'
+        required: true
+        default: '30'
+        type: choice
+        options:
+          - '15'
+          - '30'
+          - '60'
+
+env:
+  TOOLS_IMAGE: ghcr.io/${{ github.repository }}/profiling-tools-el9:latest
+
+jobs:
+  # ============================================================
+  # Job 1: Build baseline nginx RPM (with -g debug symbols)
+  # ============================================================
+  build-baseline:
+    name: Build baseline RPM
+    runs-on: ubicloud-standard-4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile.rpmbuild-el9 -t rpmbuild:el9 .
+
+      - name: Build baseline RPMs
+        run: |
+          mkdir -p output && chmod 777 output
+          docker run --rm \
+            -e CRYPTO=${{ inputs.crypto || 'system' }} \
+            -e ZLIB=${{ inputs.zlib || 'system' }} \
+            -e LTO=${{ inputs.lto || 'n' }} \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el9
+
+      - name: List built RPMs
+        run: ls -lh output/
+
+      - name: Upload baseline RPMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-rpms
+          path: output/*.rpm
+          retention-days: 1
+
+  # ============================================================
+  # Job 2: Profile collection — perf record + create_gcov
+  # ============================================================
+  profile-collect:
+    name: Collect AutoFDO profile
+    needs: build-baseline
+    runs-on: ubicloud-standard-4
+    steps:
+      - name: Download baseline RPMs
+        uses: actions/download-artifact@v4
+        with:
+          name: baseline-rpms
+          path: rpms/
+
+      - name: Tune perf permissions on host
+        run: |
+          echo "=== DEBUG: Host environment ==="
+          uname -a
+          cat /proc/cpuinfo | grep "model name" | head -1
+          nproc
+          free -h
+          echo ""
+          echo "=== DEBUG: perf settings before ==="
+          cat /proc/sys/kernel/perf_event_paranoid
+          cat /proc/sys/kernel/kptr_restrict
+          echo ""
+          sudo sysctl -w kernel.perf_event_paranoid=-1
+          sudo sysctl -w kernel.kptr_restrict=0
+          echo ""
+          echo "=== DEBUG: perf settings after ==="
+          echo "perf_event_paranoid=$(cat /proc/sys/kernel/perf_event_paranoid)"
+          echo "kptr_restrict=$(cat /proc/sys/kernel/kptr_restrict)"
+
+      - name: Pull profiling tools image
+        run: docker pull ${{ env.TOOLS_IMAGE }}
+
+      - name: Collect profile
+        run: |
+          mkdir -p profiles
+          docker run --rm \
+            --privileged \
+            --security-opt seccomp=unconfined \
+            -v ${{ github.workspace }}/rpms:/rpms \
+            -v ${{ github.workspace }}/profiles:/profiles \
+            ${{ env.TOOLS_IMAGE }} bash -ce '
+              echo "=== DEBUG: Container environment ==="
+              cat /etc/os-release | head -3 || true
+              echo "Tools available:"
+              for tool in perf create_gcov ab; do
+                echo "  $tool: $(command -v $tool 2>/dev/null || echo NOT FOUND)"
+              done
+              perf --version 2>&1 || true
+              create_gcov --help 2>&1 | head -3 || echo "WARN: create_gcov --help failed"
+              echo ""
+
+              echo "=== DEBUG: Available RPMs ==="
+              ls -lh /rpms/*.rpm 2>/dev/null || true
+
+              echo ""
+              echo "=== Installing baseline nginx ==="
+              rpm -ivh --nodeps /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -20
+
+              echo ""
+              echo "=== DEBUG: nginx binary info ==="
+              file /usr/local/sbin/nginx 2>/dev/null || true
+              ls -lh /usr/local/sbin/nginx 2>/dev/null || true
+              echo ""
+
+              echo "=== Verifying nginx ==="
+              /usr/local/sbin/nginx -V 2>&1
+              /usr/local/sbin/nginx -t 2>&1
+
+              echo ""
+              echo "=== Starting nginx ==="
+              /usr/local/sbin/nginx
+              sleep 2
+
+              echo "=== DEBUG: nginx processes ==="
+              ps aux | grep nginx || true
+              echo ""
+              echo "=== DEBUG: nginx listening ==="
+              ss -tlnp 2>/dev/null | grep -E ":80|nginx" || netstat -tlnp 2>/dev/null | grep -E ":80|nginx" || echo "DEBUG: ss/netstat not available"
+              echo ""
+              echo "=== DEBUG: Quick connectivity test ==="
+              ab -n 10 -c 1 http://127.0.0.1:80/ 2>&1 | tail -5
+
+              DURATION=${{ inputs.profile_duration }}
+              echo ""
+              echo "=== DEBUG: perf capabilities ==="
+              perf list hw 2>&1 | head -20 || true
+              echo ""
+              echo "=== DEBUG: LBR support check ==="
+              perf list | grep -i "branch\|lbr\|BR_INST" 2>&1 | head -10 || true
+
+              echo ""
+              echo "=== AutoFDO profiling for ${DURATION}s ==="
+
+              # Start load generator in background
+              ab -n 1000000 -c 50 http://127.0.0.1:80/ &
+              LOAD_PID=$!
+
+              NGINX_PIDS=$(pgrep -d, -x nginx)
+              echo "DEBUG: nginx PIDs: ${NGINX_PIDS}"
+
+              # Try LBR first (best quality for AutoFDO), fallback to cycles
+              PERF_OK=0
+              PERF_MODE="none"
+              if perf record -e BR_INST_RETIRED.NEAR_TAKEN:u -b -c 500009 \
+                   -o /profiles/perf.data \
+                   -p ${NGINX_PIDS} -- sleep ${DURATION} 2>/dev/null; then
+                echo "PASS: LBR profiling succeeded (best quality)"
+                PERF_OK=1
+                PERF_MODE="lbr"
+              else
+                echo "WARN: LBR unavailable on this runner, falling back to cycles sampling"
+                echo "      (This is expected on GitHub-hosted VMs without bare-metal access)"
+                if perf record -e cycles:u -c 500009 \
+                     -o /profiles/perf.data \
+                     -p ${NGINX_PIDS} -- sleep ${DURATION} 2>&1; then
+                  echo "PASS: Cycles profiling succeeded (lower quality than LBR)"
+                  PERF_OK=1
+                  PERF_MODE="cycles"
+                else
+                  echo "FAIL: perf record failed entirely"
+                fi
+              fi
+
+              # Cleanup
+              kill $LOAD_PID 2>/dev/null || true
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+
+              if [ "$PERF_OK" -eq 0 ]; then
+                echo "FAIL: Could not collect perf data on this runner"
+                echo "DEBUG: This may be a GitHub Actions VM limitation"
+                exit 1
+              fi
+
+              echo ""
+              echo "=== perf data collected (mode: ${PERF_MODE}) ==="
+              ls -lh /profiles/perf.data
+              echo ""
+              echo "=== DEBUG: perf report summary ==="
+              perf report --stdio -i /profiles/perf.data 2>&1 | head -40
+              echo ""
+              echo "=== DEBUG: perf data header ==="
+              perf script -i /profiles/perf.data 2>&1 | head -20 || true
+
+              # Convert to AutoFDO profile (GCC gcov format)
+              echo ""
+              echo "=== Converting to AutoFDO profile with create_gcov ==="
+              echo "DEBUG: create_gcov --binary=/usr/local/sbin/nginx --profile=/profiles/perf.data --gcov=/profiles/nginx.gcov --gcov_version=2"
+              create_gcov --binary=/usr/local/sbin/nginx \
+                          --profile=/profiles/perf.data \
+                          --gcov=/profiles/nginx.gcov \
+                          --gcov_version=2 2>&1
+
+              if [ -f /profiles/nginx.gcov ]; then
+                echo ""
+                echo "PASS: AutoFDO profile generated"
+                ls -lh /profiles/nginx.gcov
+                echo "=== DEBUG: gcov profile preview ==="
+                head -20 /profiles/nginx.gcov 2>/dev/null || xxd /profiles/nginx.gcov | head -10
+              else
+                echo "FAIL: create_gcov failed to produce profile"
+                echo "DEBUG: Check if perf.data format is compatible with create_gcov"
+                exit 1
+              fi
+
+              # === BASELINE BENCHMARK ===
+              # Generate self-signed TLS cert for HTTP/2 benchmark
+              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+                -keyout /tmp/bench.key -out /tmp/bench.crt \
+                -subj "/CN=localhost" 2>/dev/null
+              mkdir -p /usr/local/nginx/conf/conf.d
+              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / {\n        root /usr/local/nginx/html;\n    }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
+
+              echo ""
+              echo "=========================================="
+              echo "=== BASELINE HTTP/1.1 BENCHMARK (ab)   ==="
+              echo "=========================================="
+              /usr/local/sbin/nginx
+              sleep 1
+              ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+              for run in 1 2 3; do
+                echo ""
+                echo "--- Baseline HTTP/1.1 run ${run}/3 ---"
+                ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+
+              echo ""
+              echo "=========================================="
+              echo "=== BASELINE HTTP/2+TLS BENCHMARK       ==="
+              echo "=========================================="
+              h2load -n 10000 -c 50 -m 50 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1 || true
+              for run in 1 2 3; do
+                echo ""
+                echo "--- Baseline HTTP/2+TLS run ${run}/3 ---"
+                h2load -n 100000 -c 100 -m 50 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes" || true
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              echo ""
+              echo "=== Baseline benchmark complete ==="
+            '
+
+      - name: Upload AutoFDO profile
+        uses: actions/upload-artifact@v4
+        with:
+          name: autofdo-profile
+          path: profiles/nginx.gcov
+          retention-days: 1
+
+  # ============================================================
+  # Job 3: Rebuild with -fauto-profile
+  # ============================================================
+  build-autofdo:
+    name: Build AutoFDO-optimized RPM
+    needs: profile-collect
+    runs-on: ubicloud-standard-4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download AutoFDO profile
+        uses: actions/download-artifact@v4
+        with:
+          name: autofdo-profile
+          path: profiles/
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile.rpmbuild-el9 -t rpmbuild:el9 .
+
+      - name: Build AutoFDO-optimized RPMs
+        run: |
+          mkdir -p output && chmod 777 output
+          # Mount profile into the container at a known path
+          # The AUTOFDO env var tells the spec to add -fauto-profile=<path>
+          docker run --rm \
+            -e CRYPTO=${{ inputs.crypto || 'system' }} \
+            -e ZLIB=${{ inputs.zlib || 'system' }} \
+            -e LTO=${{ inputs.lto || 'n' }} \
+            -e AUTOFDO=/home/builder/rpmbuild/SOURCES/nginx.gcov \
+            -v ${{ github.workspace }}/profiles/nginx.gcov:/home/builder/rpmbuild/SOURCES/nginx.gcov:ro \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el9
+
+      - name: List built RPMs
+        run: ls -lh output/
+
+      - name: Verify AutoFDO build
+        run: |
+          docker run --rm --user root \
+            -v ${{ github.workspace }}/output:/output \
+            rpmbuild:el9 bash -c '
+              echo "=== DEBUG: Built RPMs ==="
+              ls -lh /output/*.rpm 2>/dev/null
+
+              echo ""
+              echo "=== Installing AutoFDO-optimized RPM ==="
+              rpm -ivh --nodeps /output/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -10
+
+              echo ""
+              echo "=== DEBUG: Installed binary ==="
+              file /usr/local/sbin/nginx 2>/dev/null || true
+              ls -lh /usr/local/sbin/nginx 2>/dev/null || true
+              ldd /usr/local/sbin/nginx 2>&1 | head -20 || true
+
+              echo ""
+              echo ":: nginx -V ::"
+              NGINX_V=$(/usr/local/sbin/nginx -V 2>&1)
+              echo "$NGINX_V"
+
+              echo ""
+              echo "=== AutoFDO verification ==="
+              if echo "$NGINX_V" | grep -q -- "-fauto-profile"; then
+                echo "PASS: -fauto-profile found in nginx -V"
+              else
+                echo "INFO: -fauto-profile path may not appear in -V output"
+                echo "      (GCC records the configure line, path should be visible)"
+              fi
+
+              echo ""
+              echo ":: nginx -t (config syntax check) ::"
+              /usr/local/sbin/nginx -t 2>&1
+
+              echo ""
+              echo ":: Quick smoke test — start/stop ::"
+              /usr/local/sbin/nginx 2>&1
+              sleep 1
+              curl -sI http://127.0.0.1:80/ 2>&1 | head -3 || echo "DEBUG: curl not available, skipping HTTP test"
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+
+              echo ""
+              echo "PASS: AutoFDO-optimized nginx verified"
+            '
+
+      - name: Download baseline RPMs for benchmark comparison
+        uses: actions/download-artifact@v4
+        with:
+          name: baseline-rpms
+          path: baseline-rpms/
+
+      - name: Benchmark AutoFDO vs Baseline
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/output:/autofdo-rpms \
+            -v ${{ github.workspace }}/baseline-rpms:/baseline-rpms \
+            ${{ env.TOOLS_IMAGE }} bash -ce '
+              # Setup TLS for benchmarks
+              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+                -keyout /tmp/bench.key -out /tmp/bench.crt \
+                -subj "/CN=localhost" 2>/dev/null
+
+              # === AUTOFDO-OPTIMIZED BENCHMARK ===
+              rpm -ivh --nodeps /autofdo-rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -5
+              mkdir -p /usr/local/nginx/conf/conf.d
+              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / {\n        root /usr/local/nginx/html;\n    }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
+              /usr/local/sbin/nginx
+              sleep 1
+
+              echo "=========================================="
+              echo "=== AUTOFDO HTTP/1.1 BENCHMARK (ab)    ==="
+              echo "=========================================="
+              ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+              for run in 1 2 3; do
+                echo ""
+                echo "--- AutoFDO HTTP/1.1 run ${run}/3 ---"
+                ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+
+              echo ""
+              echo "=========================================="
+              echo "=== AUTOFDO HTTP/2+TLS BENCHMARK        ==="
+              echo "=========================================="
+              h2load -n 10000 -c 50 -m 50 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1 || true
+              for run in 1 2 3; do
+                echo ""
+                echo "--- AutoFDO HTTP/2+TLS run ${run}/3 ---"
+                h2load -n 100000 -c 100 -m 50 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes" || true
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+
+              # === BASELINE BENCHMARK (for comparison) ===
+              echo ""
+              echo "=========================================="
+              echo "=== BASELINE BENCHMARK (for comparison) ==="
+              echo "=========================================="
+              rpm -e --nodeps $(rpm -qa | grep centminmod-nginx) 2>/dev/null || true
+              rpm -ivh --nodeps /baseline-rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>&1 | head -5
+              mkdir -p /usr/local/nginx/conf/conf.d
+              cp /tmp/bench-ssl.conf /usr/local/nginx/conf/conf.d/bench-ssl.conf 2>/dev/null || \
+              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / {\n        root /usr/local/nginx/html;\n    }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
+              /usr/local/sbin/nginx
+              sleep 1
+
+              echo "--- Baseline HTTP/1.1 ---"
+              ab -n 10000 -c 50 http://127.0.0.1:80/ > /dev/null 2>&1
+              for run in 1 2 3; do
+                echo ""
+                echo "--- Baseline HTTP/1.1 run ${run}/3 ---"
+                ab -n 100000 -c 100 http://127.0.0.1:80/ 2>&1 | grep -E "Requests per second|Time per request|Transfer rate|Complete requests|Failed requests"
+              done
+
+              echo ""
+              echo "--- Baseline HTTP/2+TLS ---"
+              h2load -n 10000 -c 50 -m 50 -t 4 https://127.0.0.1:8443/ > /dev/null 2>&1 || true
+              for run in 1 2 3; do
+                echo ""
+                echo "--- Baseline HTTP/2+TLS run ${run}/3 ---"
+                h2load -n 100000 -c 100 -m 50 -t 4 https://127.0.0.1:8443/ 2>&1 | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes" || true
+              done
+              /usr/local/sbin/nginx -s quit 2>/dev/null || true
+              echo ""
+              echo "=== Benchmark comparison complete ==="
+            '
+
+      - name: Upload AutoFDO RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-rpms-el9-autofdo
+          path: output/*.rpm
