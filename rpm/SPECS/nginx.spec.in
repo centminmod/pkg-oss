@@ -289,18 +289,22 @@ echo "AWS-LC built and installed to %{bdir}/nginx-dep"
 %define CRYPTO_CC_OPT -isystem %{bdir}/nginx-dep/include
 %define CRYPTO_LD_OPT -L%{bdir}/nginx-dep/lib64 -lssl -lcrypto -lpthread -ldl
 %define CRYPTO_CONFIGURE_ARGS %{nil}
+%define CRYPTO_POST_CONFIGURE %{nil}
 %endif
 %if "%{crypto_lib}" == "openssl"
 %define CRYPTO_CC_OPT %{nil}
-# -Wl,-E exports all symbols to dynamic table so .so modules can resolve
-# OpenSSL symbols (e.g. MD5) that --with-openssl= statically links
+# -Wl,-E exports all dynamic symbols so modules can resolve them at load time
 %define CRYPTO_LD_OPT -Wl,-E
 %define CRYPTO_CONFIGURE_ARGS --with-openssl=../openssl-%%OPENSSL_CUSTOM_VERSION%% --with-openssl-opt='enable-ec_nistp_64_gcc_128 enable-tls1_3'
+# Post-configure: patch objs/Makefile to use --whole-archive for OpenSSL static libs
+# so that all symbols (including MD5) are included in the binary for dynamic module use
+%define CRYPTO_POST_CONFIGURE sed -i 's|-lssl -lcrypto|-Wl,--whole-archive -lssl -lcrypto -Wl,--no-whole-archive|g' objs/Makefile
 %endif
 %if "%{crypto_lib}" == "system"
 %define CRYPTO_CC_OPT %{nil}
 %define CRYPTO_LD_OPT %{nil}
 %define CRYPTO_CONFIGURE_ARGS %{nil}
+%define CRYPTO_POST_CONFIGURE %{nil}
 %endif
 
 %if "%{zlib_lib}" == "cloudflare"
@@ -313,12 +317,14 @@ echo "AWS-LC built and installed to %{bdir}/nginx-dep"
     --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT} %{AUTOFDO_CC_OPT}" \
     --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %{LTO_LD_OPT} %{LINKER_LD_OPT}" \
     --with-debug
+%{CRYPTO_POST_CONFIGURE}
 make %{?_smp_mflags}
 %{__mv} %{bdir}/objs/nginx \
     %{bdir}/objs/nginx-debug
 ./configure %{BASE_CONFIGURE_ARGS} %{ZLIB_CONFIGURE_ARGS} %{CRYPTO_CONFIGURE_ARGS} \
     --with-cc-opt="%{WITH_CC_OPT} %{CRYPTO_CC_OPT} %{LTO_CC_OPT} %{MARCH_CC_OPT} %{AUTOFDO_CC_OPT}" \
     --with-ld-opt="%{WITH_LD_OPT} %{CRYPTO_LD_OPT} %{LTO_LD_OPT} %{LINKER_LD_OPT}"
+%{CRYPTO_POST_CONFIGURE}
 make %{?_smp_mflags}
 
 %install

@@ -73,13 +73,35 @@ AWSLC_VERSION=
 OPENSSL_CUSTOM_VERSION=
 endif
 
-# Crypto source for module specs (openssl needs tarball in module build)
+# Crypto source for module specs (openssl needs tarball + prebuild)
 ifeq ($(CRYPTO),openssl)
 CRYPTO_MODULE_SOURCES=	Source51: openssl-$(OPENSSL_CUSTOM_VERSION).tar.gz
 CRYPTO_MODULE_PREP=	tar -C %{_builddir} -xzf %{SOURCE51}
+# Pre-build OpenSSL once to /tmp/openssl-prebuilt, skip on subsequent modules
+# Sentinel: check if ssl.h exists; all 26 modules share /tmp in the same docker run
+define CRYPTO_MODULE_PREBUILD
+OSSL_PREFIX=/tmp/openssl-prebuilt
+if [ ! -f "$${OSSL_PREFIX}/include/openssl/ssl.h" ]; then
+  echo "=== Building OpenSSL $(OPENSSL_CUSTOM_VERSION) to $${OSSL_PREFIX} (first module) ==="
+  mkdir -p "$${OSSL_PREFIX}"
+  cd %{_builddir}/openssl-$(OPENSSL_CUSTOM_VERSION)
+  ./Configure --prefix="$${OSSL_PREFIX}" --libdir=lib \
+    no-shared no-tests \
+    enable-ec_nistp_64_gcc_128 enable-tls1_3
+  make -j$$(nproc)
+  make install_sw LIBDIR=lib
+  echo "=== OpenSSL pre-build complete ==="
+else
+  echo "=== Reusing pre-built OpenSSL at $${OSSL_PREFIX} ==="
+fi
+endef
+export CRYPTO_MODULE_PREBUILD
 else
 CRYPTO_MODULE_SOURCES=
 CRYPTO_MODULE_PREP=
+define CRYPTO_MODULE_PREBUILD
+endef
+export CRYPTO_MODULE_PREBUILD
 endif
 
 # Compression library selection (default: system zlib)
@@ -389,6 +411,7 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 	pkgname=`echo $${pkgname} | sed -e "s#^nginx-#nginx$(MODULE_SUFFIX)-#"` ; \
 	definitions=`echo "$$MODULE_DEFINITIONS_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
 	prebuild=`echo "$$MODULE_PREBUILD_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
+	crypto_prebuild=`echo "$$CRYPTO_MODULE_PREBUILD" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
 	preinstall=`echo "$$MODULE_PREINSTALL_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
 	buildenv=`echo "$$MODULE_ENV_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
 	files=`echo "$$MODULE_FILES_$(call modname, $*)" | sed -e ':a' -e 'N' -e '$$!ba' -e "s/\n/\$$CR/g"` ; \
@@ -430,6 +453,7 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e "s#%%MODULE_PREP_PATCHES%%#$${preppatches}#g" \
 		-e "s#%%MODULE_DEFINITIONS%%#$${definitions}#g" \
 		-e "s#%%MODULE_PREBUILD%%#$${prebuild}#g" \
+		-e "s#%%CRYPTO_MODULE_PREBUILD%%#$${crypto_prebuild}#g" \
 		-e "s#%%MODULE_ENV%%#$${buildenv}#g" \
 		-e "s#%%MODULE_CC_OPT%%#$(MODULE_CC_OPT_$(call modname, $*))#g" \
 		-e "s#%%MODULE_CC_OPT_DEBUG%%#$(MODULE_CC_OPT_DEBUG_$(call modname, $*))#g" \

@@ -152,16 +152,22 @@ BuildRequires: mold
 %define CRYPTO_CC_OPT -isystem %{bdir}/nginx-dep/include
 %define CRYPTO_LD_OPT -L%{bdir}/nginx-dep/lib64 -lssl -lcrypto -lpthread -ldl
 %define CRYPTO_CONFIGURE_ARGS %{nil}
+%define CRYPTO_POST_CONFIGURE %{nil}
 %endif
 %if "%{crypto_lib}" == "openssl"
-%define CRYPTO_CC_OPT %{nil}
-%define CRYPTO_LD_OPT -Wl,-E
-%define CRYPTO_CONFIGURE_ARGS --with-openssl=../openssl-%%OPENSSL_CUSTOM_VERSION%% --with-openssl-opt='enable-ec_nistp_64_gcc_128 enable-tls1_3'
+# Pre-built OpenSSL at /tmp/openssl-prebuilt (built once by CRYPTO_MODULE_PREBUILD,
+# reused by all 26 modules in the same docker run)
+%define OSSL_PREFIX /tmp/openssl-prebuilt
+%define CRYPTO_CC_OPT -isystem %{OSSL_PREFIX}/include
+%define CRYPTO_LD_OPT -L%{OSSL_PREFIX}/lib -lssl -lcrypto -lpthread -ldl
+%define CRYPTO_CONFIGURE_ARGS %{nil}
+%define CRYPTO_POST_CONFIGURE %{nil}
 %endif
 %if "%{crypto_lib}" == "system"
 %define CRYPTO_CC_OPT %{nil}
 %define CRYPTO_LD_OPT %{nil}
 %define CRYPTO_CONFIGURE_ARGS %{nil}
+%define CRYPTO_POST_CONFIGURE %{nil}
 %endif
 
 %if "%{zlib_lib}" == "cloudflare"
@@ -189,6 +195,7 @@ ln -s . nginx%{?base_suffix}
 . /opt/rh/gcc-toolset-15/enable
 %endif
 echo "GCC version: $(gcc --version | head -1)"
+%%CRYPTO_MODULE_PREBUILD%%
 %%MODULE_PREBUILD%%
 cd %{bdir}
 %%MODULE_ENV%%
