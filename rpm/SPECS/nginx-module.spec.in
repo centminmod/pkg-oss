@@ -155,7 +155,7 @@ BuildRequires: mold
 %endif
 %if "%{crypto_lib}" == "openssl"
 %define CRYPTO_CC_OPT %{nil}
-%define CRYPTO_LD_OPT %{nil}
+%define CRYPTO_LD_OPT -Wl,-E
 %define CRYPTO_CONFIGURE_ARGS --with-openssl=../openssl-%%OPENSSL_CUSTOM_VERSION%% --with-openssl-opt='enable-ec_nistp_64_gcc_128 enable-tls1_3'
 %endif
 %if "%{crypto_lib}" == "system"
