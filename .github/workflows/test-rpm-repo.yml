@@ -480,9 +480,10 @@ jobs:
           BODY=$(curl -sf http://127.0.0.1:8880/test-vts 2>/dev/null || true)
           if echo "$BODY" | grep -q "hostName"; then pass "vts: traffic status JSON"; else fail "vts: expected hostName in JSON"; fi
 
-          # 10. fancyindex (outputs HTML table with id="list" instead of default <pre> listing)
-          BODY=$(curl -sf http://127.0.0.1:8880/test-fancyindex 2>/dev/null || true)
-          if echo "$BODY" | grep -q 'id="list"'; then pass "fancyindex: directory listing"; else fail "fancyindex: no fancyindex table in response"; fi
+          # 10. fancyindex (generates themed HTML table, not default <pre> listing)
+          BODY=$(curl -sf http://127.0.0.1:8880/test-fancyindex/ 2>/dev/null || true)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8880/test-fancyindex/ 2>/dev/null || true)
+          if [ "$HTTP_CODE" = "200" ] && echo "$BODY" | grep -q "<table"; then pass "fancyindex: directory listing ($HTTP_CODE)"; else fail "fancyindex: expected 200 with <table, got $HTTP_CODE body=${#BODY}chars"; fi
 
           # 11. image-filter
           CT=$(curl -sI http://127.0.0.1:8880/test-image-filter/test.png 2>/dev/null | grep -i "Content-Type" || true)
