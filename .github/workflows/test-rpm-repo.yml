@@ -98,7 +98,7 @@ jobs:
           dnf install -y nginx-module-* 2>&1 | tail -5
 
           echo "Installing test dependencies..."
-          dnf install -y redis curl jq procps-ng gd libxslt 2>&1 | tail -3
+          dnf install -y --allowerasing redis jq procps-ng gd libxslt 2>&1 | tail -3
 
           echo ""
           echo "=========================================="
