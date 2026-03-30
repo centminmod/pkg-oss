@@ -292,7 +292,9 @@ echo "AWS-LC built and installed to %{bdir}/nginx-dep"
 %endif
 %if "%{crypto_lib}" == "openssl"
 %define CRYPTO_CC_OPT %{nil}
-%define CRYPTO_LD_OPT %{nil}
+# -Wl,-E exports all symbols to dynamic table so .so modules can resolve
+# OpenSSL symbols (e.g. MD5) that --with-openssl= statically links
+%define CRYPTO_LD_OPT -Wl,-E
 %define CRYPTO_CONFIGURE_ARGS --with-openssl=../openssl-%%OPENSSL_CUSTOM_VERSION%% --with-openssl-opt='enable-ec_nistp_64_gcc_128 enable-tls1_3'
 %endif
 %if "%{crypto_lib}" == "system"
