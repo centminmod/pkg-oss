@@ -27,11 +27,11 @@ on:
       zlib:
         description: 'Compression library'
         required: true
-        default: 'system'
+        default: 'cloudflare'
         type: choice
         options:
-          - system
           - cloudflare
+          - system
 
 jobs:
   build:

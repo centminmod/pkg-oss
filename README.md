@@ -48,7 +48,8 @@ RPMs are published to `rpm-nginx.centminmod.com` in variant-separated directorie
 | **stable** | `/stable/el/{8,9,10}/x86_64/` | System OpenSSL | Default, recommended for most users |
 | **awslc** | `/awslc/el/{8,9,10}/x86_64/` | [AWS-LC](https://github.com/aws/aws-lc) | AWS crypto library, FIPS-capable |
 | **openssl** | `/openssl/el/{8,9,10}/x86_64/` | Custom OpenSSL 3.5.x | Built from source with custom options |
-| **optimized** | `/optimized/el/{8,9,10}/x86_64/` | System OpenSSL | LTO + `-march=x86-64-v3` + mold linker |
+| **optimized** | `/optimized/el/{8,9,10}/x86_64/` | System OpenSSL | LTO + `-march=x86-64-v3` + mold linker (Haswell 2013+) |
+| **optimized-v4** | `/optimized-v4/el/{8,9,10}/x86_64/` | System OpenSSL | LTO + `-march=x86-64-v4` + mold linker (Skylake-X / Zen 4+, AVX-512) |
 
 Each variant includes:
 - 1 base package: `centminmod-nginx` (or `centminmod-nginx-awslc`, `centminmod-nginx-openssl`)

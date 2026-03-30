@@ -14,6 +14,7 @@ on:
           - awslc
           - openssl
           - optimized
+          - optimized-v4
           - bolt
       el_version:
         description: 'EL version'
@@ -132,6 +133,9 @@ jobs:
               ;;
             optimized)
               ARTIFACT_NAME="nginx-rpms-el${EL_VERSION}-optimized"
+              ;;
+            optimized-v4)
+              ARTIFACT_NAME="nginx-rpms-el${EL_VERSION}-optimized-v4"
               ;;
             bolt)
               ARTIFACT_NAME="nginx-rpms-el9-bolt"
@@ -523,7 +527,8 @@ jobs:
           <tr><td><strong>stable</strong></td><td>Most users &mdash; uses your system&rsquo;s OpenSSL</td></tr>
           <tr><td><strong>awslc</strong></td><td>AWS-LC crypto library (FIPS-capable)</td></tr>
           <tr><td><strong>openssl</strong></td><td>Custom OpenSSL built from source</td></tr>
-          <tr><td><strong>optimized</strong></td><td>LTO + advanced CPU targeting + mold linker</td></tr>
+          <tr><td><strong>optimized</strong></td><td>LTO + x86-64-v3 + mold linker (Haswell 2013+)</td></tr>
+          <tr><td><strong>optimized-v4</strong></td><td>LTO + x86-64-v4 + mold linker (Skylake-X / Zen 4+, AVX-512)</td></tr>
           </table>
           <p>To switch variants, replace <code>stable</code> with the variant name in the baseurl.</p>
 
