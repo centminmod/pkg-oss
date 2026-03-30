@@ -136,22 +136,29 @@ RPM builds run inside Docker containers (AlmaLinux 8/9/10). You do NOT need an R
 | **Build RPM (AutoFDO)** | `build-nginx-rpm-autofdo.yml` | AutoFDO profile-guided optimization (POC) |
 | **Build RPM (BOLT)** | `build-nginx-rpm-bolt.yml` | BOLT post-link binary optimization (POC) |
 | **Publish to R2** | `publish-rpm-repo.yml` | Upload RPMs to Cloudflare R2 + `dnf install` test |
+| **Test RPM Repository** | `test-rpm-repo.yml` | Functional test all 26 modules from live R2 repo |
 | **Benchmark Compare** | `benchmark-compare.yml` | h2load benchmark: base vs optimized |
+| **Benchmark Compare v4** | `benchmark-compare-v4-ubicloud.yml` | h2load benchmark on AVX-512 Ubicloud runners |
+
+All build workflows also have Ubicloud variants (`*-ubicloud.yml`) that run on AVX-512 capable runners for `x86-64-v4` builds.
 
 ### Triggering a Build
 
 Via GitHub Actions UI or CLI:
 
 ```bash
-# Standard build (system crypto)
-gh workflow run build-nginx-rpm.yml -f el_versions=el9 -f crypto=system -f zlib=system
+# Standard build (Cloudflare zlib default)
+gh workflow run build-nginx-rpm.yml -f el_versions=el9 -f crypto=system
 
 # AWS-LC crypto
-gh workflow run build-nginx-rpm.yml -f el_versions=el9 -f crypto=awslc -f zlib=system
+gh workflow run build-nginx-rpm.yml -f el_versions=el9 -f crypto=awslc
 
 # Optimized (LTO + march + mold)
 gh workflow run build-nginx-rpm-optimized.yml -f el_versions=el9 \
-  -f crypto=system -f zlib=system -f lto=y -f march=x86-64-v3 -f linker=mold
+  -f crypto=system -f lto=y -f march=x86-64-v3 -f linker=mold
+
+# Test all variants from live R2 repo
+gh workflow run test-rpm-repo.yml -f variants=stable,awslc,openssl,optimized,optimized-v4
 ```
 
 ### Build Inputs
@@ -160,7 +167,7 @@ gh workflow run build-nginx-rpm-optimized.yml -f el_versions=el9 \
 |-------|---------|---------|-------------|
 | `el_versions` | el8, el9, el10, el9-el10, el8-el9-el10 | el9 | Target EL version(s) |
 | `crypto` | system, awslc, openssl | system | Crypto library |
-| `zlib` | system, cloudflare | system | Compression library |
+| `zlib` | cloudflare, system | cloudflare | Compression library ([Cloudflare zlib](https://github.com/nicholasjackson/cloudflare-zlib) SIMD-accelerated) |
 | `lto` | n, y | n | Link-Time Optimization (optimized workflow) |
 | `march` | generic, x86-64-v2, x86-64-v3, x86-64-v4 | generic | Microarchitecture target (optimized workflow) |
 | `linker` | default, mold | default | Linker selection (optimized workflow) |
@@ -242,7 +249,7 @@ Makefile (root)                    # Version management, release automation
 ### Directory Layout
 
 ```
-.github/workflows/          # CI/CD workflows (12 total)
+.github/workflows/          # CI/CD workflows (17 total)
 rpm/SPECS/                   # Spec templates, Makefiles, module definitions
 rpm/SOURCES/                 # nginx.conf, systemd services, config files
 contrib/src/                 # Module source directories with patches
