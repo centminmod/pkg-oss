@@ -64,7 +64,7 @@ jobs:
   # ============================================================
   build-baseline:
     name: Build baseline RPM
-    runs-on: ubicloud-standard-4
+    runs-on: ubicloud-standard-8
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -98,7 +98,7 @@ jobs:
   profile-collect:
     name: Collect AutoFDO profile
     needs: build-baseline
-    runs-on: ubicloud-standard-4
+    runs-on: ubicloud-standard-8
     steps:
       - name: Download baseline RPMs
         uses: actions/download-artifact@v4
@@ -309,7 +309,7 @@ jobs:
   build-autofdo:
     name: Build AutoFDO-optimized RPM
     needs: profile-collect
-    runs-on: ubicloud-standard-4
+    runs-on: ubicloud-standard-8
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
