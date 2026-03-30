@@ -329,8 +329,8 @@ jobs:
             NGINX_V=$(/usr/local/sbin/nginx -V 2>&1)
             echo "$NGINX_V"
             echo ""
-            echo ":: nginx -t (config syntax check) ::"
-            /usr/local/sbin/nginx -t 2>&1 || true
+            echo ":: nginx -t (base only, modules not loaded yet — may fail) ::"
+            /usr/local/sbin/nginx -t 2>&1 || echo "(expected: shipped config requires dynamic modules)"
             echo ""
             echo "=== Compiler verification ==="
             PASS=0
@@ -660,12 +660,13 @@ jobs:
               echo "$rpm_file" | grep -q debuginfo && continue
               rpm -ivh --nodeps "$rpm_file" 2>&1 | tail -1
             done
-            dnf -y install httpd-tools nghttp2 2>&1 | tail -5
+            dnf -y install httpd-tools nghttp2 openssl 2>&1 | tail -5
 
             # Generate self-signed TLS cert for HTTP/2 benchmark
             openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
               -keyout /tmp/bench.key -out /tmp/bench.crt \
-              -subj "/CN=localhost" 2>/dev/null
+              -subj "/CN=localhost" 2>&1
+            ls -la /tmp/bench.crt /tmp/bench.key 2>/dev/null || echo "WARNING: TLS cert generation failed"
             mkdir -p /usr/local/nginx/conf/conf.d
             printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:10m;\n    location / {\n        root /usr/local/nginx/html;\n    }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
 
