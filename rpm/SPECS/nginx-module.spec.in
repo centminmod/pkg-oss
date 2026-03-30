@@ -188,13 +188,15 @@ ln -s . nginx%{?base_suffix}
 %%CRYPTO_MODULE_PREP%%
 
 %if "%{zlib_lib}" == "cloudflare"
-# Extract Cloudflare zlib to parent dir, rename to friendly version, pre-configure
-# (same as nginx.spec.in — nginx's auto/lib/zlib/make needs distclean target)
-tar -C %{_builddir} -xzf %{SOURCE60}
-mv %{_builddir}/zlib-%%CF_ZLIB_COMMIT%% %{_builddir}/zlib-cloudflare-%%CF_ZLIB_VERSION%%
-cd %{_builddir}/zlib-cloudflare-%%CF_ZLIB_VERSION%%
-./configure
-cd %{bdir}
+# Extract Cloudflare zlib to parent dir (shared across all 26 module builds in same docker run).
+# Sentinel guard: skip if already extracted by a previous module's rpmbuild.
+if [ ! -d %{_builddir}/zlib-cloudflare-%%CF_ZLIB_VERSION%% ]; then
+  tar -C %{_builddir} -xzf %{SOURCE60}
+  mv %{_builddir}/zlib-%%CF_ZLIB_COMMIT%% %{_builddir}/zlib-cloudflare-%%CF_ZLIB_VERSION%%
+  cd %{_builddir}/zlib-cloudflare-%%CF_ZLIB_VERSION%%
+  ./configure
+  cd %{bdir}
+fi
 %endif
 
 %build
