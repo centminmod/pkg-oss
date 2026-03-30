@@ -196,6 +196,7 @@ jobs:
           http {
               include /usr/local/nginx/conf/mime.types;
               default_type application/octet-stream;
+              variables_hash_max_size 2048;
 
               # Module configs: vts
               vhost_traffic_status_zone;
@@ -333,7 +334,7 @@ jobs:
                       default_type application/xml;
                       alias /usr/local/nginx/html/xslt/test.xml;
                       xslt_stylesheet /usr/local/nginx/html/xslt/transform.xslt;
-                      xslt_types application/xml text/xml;
+                      xslt_types application/xml;
                   }
 
                   # 15. accesskey (should return 403 without valid key)
@@ -479,9 +480,9 @@ jobs:
           BODY=$(curl -sf http://127.0.0.1:8880/test-vts 2>/dev/null || true)
           if echo "$BODY" | grep -q "hostName"; then pass "vts: traffic status JSON"; else fail "vts: expected hostName in JSON"; fi
 
-          # 10. fancyindex
+          # 10. fancyindex (outputs HTML table with id="list" instead of default <pre> listing)
           BODY=$(curl -sf http://127.0.0.1:8880/test-fancyindex 2>/dev/null || true)
-          if echo "$BODY" | grep -qi "fancyindex"; then pass "fancyindex: directory listing"; else fail "fancyindex: no fancyindex in response"; fi
+          if echo "$BODY" | grep -q 'id="list"'; then pass "fancyindex: directory listing"; else fail "fancyindex: no fancyindex table in response"; fi
 
           # 11. image-filter
           CT=$(curl -sI http://127.0.0.1:8880/test-image-filter/test.png 2>/dev/null | grep -i "Content-Type" || true)
