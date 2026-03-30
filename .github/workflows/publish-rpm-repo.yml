@@ -547,6 +547,10 @@ jobs:
             cat /etc/yum.repos.d/centminmod-nginx-test.repo
             echo ""
 
+            echo "=== Install system dependencies ==="
+            dnf -y install procps-ng brotli libmaxminddb gd libxslt curl 2>&1 | tail -5
+            echo ""
+
             echo "=== dnf makecache ==="
             dnf makecache --repo=centminmod-nginx-test 2>&1
             echo ""
