@@ -409,6 +409,156 @@ jobs:
             echo "DONE: CDN cache purged"
           fi
 
+      - name: Generate and upload index.html
+        run: |
+          UPDATED="$(date -u '+%B %d, %Y')"
+          cat > /tmp/index.html << HTMLEOF
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Centmin Mod Nginx RPM Repository</title>
+          <style>
+          *{margin:0;padding:0;box-sizing:border-box}
+          body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#333;line-height:1.6;background:#f8f9fa}
+          .hero{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:3rem 1rem;text-align:center}
+          .hero h1{font-size:2rem;margin-bottom:.5rem}
+          .hero p{color:#b0b8c8;font-size:1.1rem}
+          .wrap{max-width:800px;margin:0 auto;padding:2rem 1rem}
+          h2{color:#1a1a2e;margin:2rem 0 1rem;font-size:1.3rem;border-bottom:2px solid #e0e0e0;padding-bottom:.3rem}
+          p,ul{margin-bottom:1rem}
+          ul{margin-left:1.5rem}
+          pre{background:#1a1a2e;color:#e0e0e0;padding:1.2rem;border-radius:8px;overflow-x:auto;font-size:.88rem;margin-bottom:1.5rem;line-height:1.5}
+          .cmt{color:#6a9955}
+          table{width:100%;border-collapse:collapse;margin-bottom:1.5rem}
+          th{background:#1a1a2e;color:#fff;padding:.6rem;text-align:left;font-size:.88rem}
+          td{padding:.5rem .6rem;border-bottom:1px solid #e0e0e0;font-size:.88rem}
+          tr:hover{background:#f0f0f0}
+          code{background:#e8e8e8;padding:.1rem .35rem;border-radius:3px;font-size:.85rem}
+          .mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.4rem;margin-bottom:1.5rem}
+          .mgrid span{background:#fff;border:1px solid #e0e0e0;border-radius:4px;padding:.35rem .6rem;font-size:.84rem}
+          .foot{text-align:center;padding:2rem 1rem;color:#888;font-size:.85rem;border-top:1px solid #e0e0e0;margin-top:2rem}
+          .foot a{color:#555}
+          a{color:#2563eb;text-decoration:none}
+          a:hover{text-decoration:underline}
+          </style>
+          </head>
+          <body>
+          <div class="hero">
+          <h1>Centmin Mod Nginx RPM Repository</h1>
+          <p>High-performance Nginx packages for AlmaLinux &amp; Rocky Linux</p>
+          </div>
+          <div class="wrap">
+
+          <h2>Getting Started</h2>
+          <p>Set up the repository on your server and install Nginx in two steps:</p>
+          <pre><span class="cmt"># Step 1 &mdash; Add the repository</span>
+          cat &gt; /etc/yum.repos.d/centminmod-nginx.repo &lt;&lt; 'EOF'
+          [centminmod-nginx]
+          name=Centmin Mod Nginx
+          baseurl=https://rpm-nginx.centminmod.com/stable/el/\$releasever/\$basearch/
+          enabled=1
+          gpgcheck=0
+          EOF
+
+          <span class="cmt"># Step 2 &mdash; Install</span>
+          dnf install centminmod-nginx</pre>
+
+          <p>Start and enable Nginx:</p>
+          <pre>systemctl start nginx
+          systemctl enable nginx</pre>
+
+          <h2>What You Get</h2>
+          <ul>
+          <li>Production-ready Nginx at <code>/usr/local/nginx/</code></li>
+          <li>26 optional modules you can add any time</li>
+          <li>Optimized builds with modern GCC toolsets</li>
+          <li>Ready-to-use config files for common setups</li>
+          <li>Managed via systemd like any other service</li>
+          </ul>
+
+          <h2>Adding Modules</h2>
+          <p>Install only the modules you need:</p>
+          <pre><span class="cmt"># Example: add Brotli compression and Lua scripting</span>
+          dnf install nginx-module-brotli nginx-module-lua
+
+          <span class="cmt"># See everything available</span>
+          dnf list available nginx-module-*</pre>
+
+          <h2>Available Modules</h2>
+          <div class="mgrid">
+          <span>nginx-module-accesskey</span>
+          <span>nginx-module-brotli</span>
+          <span>nginx-module-cache-purge</span>
+          <span>nginx-module-dav-ext</span>
+          <span>nginx-module-echo</span>
+          <span>nginx-module-encrypted-session</span>
+          <span>nginx-module-fancyindex</span>
+          <span>nginx-module-geoip2</span>
+          <span>nginx-module-headers-more</span>
+          <span>nginx-module-http-concat</span>
+          <span>nginx-module-http-rdns</span>
+          <span>nginx-module-http-redis</span>
+          <span>nginx-module-image-filter</span>
+          <span>nginx-module-length-hiding</span>
+          <span>nginx-module-lua</span>
+          <span>nginx-module-memc</span>
+          <span>nginx-module-ndk</span>
+          <span>nginx-module-njs</span>
+          <span>nginx-module-otel</span>
+          <span>nginx-module-perl</span>
+          <span>nginx-module-redis2</span>
+          <span>nginx-module-set-misc</span>
+          <span>nginx-module-srcache</span>
+          <span>nginx-module-substitutions</span>
+          <span>nginx-module-vts</span>
+          <span>nginx-module-xslt</span>
+          </div>
+
+          <h2>Build Variants</h2>
+          <p>Different builds are available. Most users should use <strong>stable</strong> (the default above).</p>
+          <table>
+          <tr><th>Variant</th><th>Best For</th></tr>
+          <tr><td><strong>stable</strong></td><td>Most users &mdash; uses your system&rsquo;s OpenSSL</td></tr>
+          <tr><td><strong>awslc</strong></td><td>AWS-LC crypto library (FIPS-capable)</td></tr>
+          <tr><td><strong>openssl</strong></td><td>Custom OpenSSL built from source</td></tr>
+          <tr><td><strong>optimized</strong></td><td>LTO + advanced CPU targeting + mold linker</td></tr>
+          </table>
+          <p>To switch variants, replace <code>stable</code> with the variant name in the baseurl.</p>
+
+          <h2>Supported Systems</h2>
+          <ul>
+          <li>AlmaLinux / Rocky Linux 8 (x86_64)</li>
+          <li>AlmaLinux / Rocky Linux 9 (x86_64)</li>
+          <li>AlmaLinux / Rocky Linux 10 (x86_64)</li>
+          </ul>
+
+          </div>
+          <div class="foot">
+          <p><a href="https://centminmod.com">centminmod.com</a> &middot; <a href="https://github.com/centminmod/pkg-oss">GitHub</a> &middot; Updated ${UPDATED}</p>
+          </div>
+          </body>
+          </html>
+          HTMLEOF
+
+          # Strip leading 10-space YAML indentation from heredoc lines
+          sed -i 's/^          //' /tmp/index.html
+
+          echo "=== Upload index.html ==="
+          aws s3 cp /tmp/index.html "s3://${R2_BUCKET}/index.html" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "public, max-age=300"
+
+          # Purge from CDN
+          curl -s -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data '{"files":["https://rpm-nginx.centminmod.com/index.html"]}' > /dev/null
+          echo "DONE: index.html uploaded and CDN cache purged"
+
       - name: Verify R2 upload (list objects)
         if: always()
         run: |
