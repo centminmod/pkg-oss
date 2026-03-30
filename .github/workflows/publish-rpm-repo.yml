@@ -440,8 +440,10 @@ jobs:
           td{padding:.5rem .6rem;border-bottom:1px solid #e0e0e0;font-size:.88rem}
           tr:hover{background:#f0f0f0}
           code{background:#e8e8e8;padding:.1rem .35rem;border-radius:3px;font-size:.85rem}
-          .mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.4rem;margin-bottom:1.5rem}
-          .mgrid span{background:#fff;border:1px solid #e0e0e0;border-radius:4px;padding:.35rem .6rem;font-size:.84rem}
+          .mtable{width:100%;border-collapse:collapse;margin-bottom:1.5rem;font-size:.88rem}
+          .mtable td{padding:.4rem .6rem;border-bottom:1px solid #eee}
+          .mtable td:first-child{font-weight:500;white-space:nowrap;width:260px}
+          .mtable tr:hover{background:#f8f9fa}
           .foot{text-align:center;padding:2rem 1rem;color:#888;font-size:.85rem;border-top:1px solid #e0e0e0;margin-top:2rem}
           .foot a{color:#555}
           a{color:#2563eb;text-decoration:none}
@@ -491,34 +493,35 @@ jobs:
           dnf list available nginx-module-*</pre>
 
           <h2>Available Modules</h2>
-          <div class="mgrid">
-          <span>nginx-module-accesskey</span>
-          <span>nginx-module-brotli</span>
-          <span>nginx-module-cache-purge</span>
-          <span>nginx-module-dav-ext</span>
-          <span>nginx-module-echo</span>
-          <span>nginx-module-encrypted-session</span>
-          <span>nginx-module-fancyindex</span>
-          <span>nginx-module-geoip2</span>
-          <span>nginx-module-headers-more</span>
-          <span>nginx-module-http-concat</span>
-          <span>nginx-module-http-rdns</span>
-          <span>nginx-module-http-redis</span>
-          <span>nginx-module-image-filter</span>
-          <span>nginx-module-length-hiding</span>
-          <span>nginx-module-lua</span>
-          <span>nginx-module-memc</span>
-          <span>nginx-module-ndk</span>
-          <span>nginx-module-njs</span>
-          <span>nginx-module-otel</span>
-          <span>nginx-module-perl</span>
-          <span>nginx-module-redis2</span>
-          <span>nginx-module-set-misc</span>
-          <span>nginx-module-srcache</span>
-          <span>nginx-module-substitutions</span>
-          <span>nginx-module-vts</span>
-          <span>nginx-module-xslt</span>
-          </div>
+          <p>Install any module with <code>dnf install nginx-module-&lt;name&gt;</code>. Each module auto-configures itself via drop-in config.</p>
+          <table class="mtable">
+          <tr><td>nginx-module-accesskey</td><td>Access key-based authorization</td></tr>
+          <tr><td>nginx-module-brotli</td><td>Brotli compression (static + dynamic)</td></tr>
+          <tr><td>nginx-module-cache-purge</td><td>Purge cached content by URL</td></tr>
+          <tr><td>nginx-module-dav-ext</td><td>WebDAV extended methods (PROPFIND, OPTIONS, etc.)</td></tr>
+          <tr><td>nginx-module-echo</td><td>Shell-style output and testing utilities</td></tr>
+          <tr><td>nginx-module-encrypted-session</td><td>Encrypt/decrypt session variables</td></tr>
+          <tr><td>nginx-module-fancyindex</td><td>Themed directory listings</td></tr>
+          <tr><td>nginx-module-geoip2</td><td>MaxMind GeoIP2 database lookups</td></tr>
+          <tr><td>nginx-module-headers-more</td><td>Add, set, or clear HTTP headers</td></tr>
+          <tr><td>nginx-module-http-concat</td><td>Concatenate files in a single response</td></tr>
+          <tr><td>nginx-module-http-rdns</td><td>Reverse DNS lookups for client IPs</td></tr>
+          <tr><td>nginx-module-http-redis</td><td>Redis caching for HTTP responses</td></tr>
+          <tr><td>nginx-module-image-filter</td><td>On-the-fly image resizing and transforms</td></tr>
+          <tr><td>nginx-module-length-hiding</td><td>Pad response length to prevent side-channel leaks</td></tr>
+          <tr><td>nginx-module-lua</td><td>Lua scripting (OpenResty lua-nginx-module)</td></tr>
+          <tr><td>nginx-module-memc</td><td>Extended memcached interface</td></tr>
+          <tr><td>nginx-module-ndk</td><td>Nginx Development Kit (dependency for lua, set-misc)</td></tr>
+          <tr><td>nginx-module-njs</td><td>NGINX JavaScript &mdash; scripting with njs</td></tr>
+          <tr><td>nginx-module-redis2</td><td>Redis 2.0 protocol support</td></tr>
+          <tr><td>nginx-module-set-misc</td><td>Extended variable manipulation (base64, hashes, etc.)</td></tr>
+          <tr><td>nginx-module-srcache</td><td>Subrequest-based caching (memcached/redis backends)</td></tr>
+          <tr><td>nginx-module-subs-filter</td><td>Regex-based response body substitution</td></tr>
+          <tr><td>nginx-module-testcookie</td><td>Bot detection via cookie challenge</td></tr>
+          <tr><td>nginx-module-vts</td><td>Virtual host traffic status &amp; monitoring</td></tr>
+          <tr><td>nginx-module-xslt</td><td>XML/XSLT response transformation</td></tr>
+          <tr><td>nginx-module-zstd</td><td>Zstandard compression (static + dynamic)</td></tr>
+          </table>
 
           <h2>Build Variants</h2>
           <p>Different builds are available. Most users should use <strong>stable</strong> (the default above).</p>
