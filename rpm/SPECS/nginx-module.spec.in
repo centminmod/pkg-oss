@@ -152,16 +152,19 @@ BuildRequires: mold
 %define CRYPTO_CC_OPT -isystem %{bdir}/nginx-dep/include
 %define CRYPTO_LD_OPT -L%{bdir}/nginx-dep/lib64 -lssl -lcrypto -lpthread -ldl
 %define CRYPTO_CONFIGURE_ARGS %{nil}
+%define CRYPTO_POST_CONFIGURE %{nil}
 %endif
 %if "%{crypto_lib}" == "openssl"
 %define CRYPTO_CC_OPT %{nil}
 %define CRYPTO_LD_OPT -Wl,-E
 %define CRYPTO_CONFIGURE_ARGS --with-openssl=../openssl-%%OPENSSL_CUSTOM_VERSION%% --with-openssl-opt='enable-ec_nistp_64_gcc_128 enable-tls1_3'
+%define CRYPTO_POST_CONFIGURE sed -i 's|-lssl -lcrypto|-Wl,--whole-archive -lssl -lcrypto -Wl,--no-whole-archive|g' objs/Makefile
 %endif
 %if "%{crypto_lib}" == "system"
 %define CRYPTO_CC_OPT %{nil}
 %define CRYPTO_LD_OPT %{nil}
 %define CRYPTO_CONFIGURE_ARGS %{nil}
+%define CRYPTO_POST_CONFIGURE %{nil}
 %endif
 
 %if "%{zlib_lib}" == "cloudflare"
