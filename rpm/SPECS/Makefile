@@ -112,9 +112,11 @@ ifeq ($(ZLIB),cloudflare)
 include $(CONTRIB)/src/cf-zlib/version
 ZLIB_SOURCES=	zlib-$(CF_ZLIB_COMMIT).tar.gz
 ZLIB_CONFIGURE_ARGS=	--with-zlib=../zlib-cloudflare-$(CF_ZLIB_VERSION) --with-zlib-opt=-fPIC
+ZLIB_MODULE_SOURCES=	Source60: zlib-$(CF_ZLIB_COMMIT).tar.gz
 else
 ZLIB_SOURCES=
 ZLIB_CONFIGURE_ARGS=
+ZLIB_MODULE_SOURCES=
 CF_ZLIB_COMMIT=
 CF_ZLIB_SHORT=
 CF_ZLIB_VERSION=
@@ -446,6 +448,7 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e 's#%%AUTOFDO%%#$(AUTOFDO)#g' \
 		-e 's#%%CRYPTO_MODULE_SOURCES%%#$(CRYPTO_MODULE_SOURCES)#g' \
 		-e 's#%%CRYPTO_MODULE_PREP%%#$(CRYPTO_MODULE_PREP)#g' \
+		-e 's#%%ZLIB_MODULE_SOURCES%%#$(ZLIB_MODULE_SOURCES)#g' \
 		-e "s#%%COPYRIGHT_SOURCE%%#$${module_copyright}#g" \
 		-e "s#%%MODULE_SOURCES%%#$${sources}#g" \
 		-e "s#%%MODULE_PATCHES%%#$${patches}#g" \

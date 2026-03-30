@@ -76,6 +76,7 @@ Source0: https://nginx.org/download/nginx-%{base_version}.tar.gz
 Source1: %%COPYRIGHT_SOURCE%%
 %%MODULE_SOURCES%%
 %%CRYPTO_MODULE_SOURCES%%
+%%ZLIB_MODULE_SOURCES%%
 
 %%MODULE_PATCHES%%
 
@@ -185,6 +186,16 @@ ln -s . nginx%{?base_suffix}
 %%MODULE_PREP_SOURCES%%
 %%MODULE_PREP_PATCHES%%
 %%CRYPTO_MODULE_PREP%%
+
+%if "%{zlib_lib}" == "cloudflare"
+# Extract Cloudflare zlib to parent dir, rename to friendly version, pre-configure
+# (same as nginx.spec.in — nginx's auto/lib/zlib/make needs distclean target)
+tar -C %{_builddir} -xzf %{SOURCE60}
+mv %{_builddir}/zlib-%%CF_ZLIB_COMMIT%% %{_builddir}/zlib-cloudflare-%%CF_ZLIB_VERSION%%
+cd %{_builddir}/zlib-cloudflare-%%CF_ZLIB_VERSION%%
+./configure
+cd %{bdir}
+%endif
 
 %build
 # Activate GCC toolset for enhanced compiler optimizations
