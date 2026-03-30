@@ -548,7 +548,7 @@ jobs:
             echo ""
 
             echo "=== Install system dependencies ==="
-            dnf -y install procps-ng brotli libmaxminddb gd libxslt curl 2>&1 | tail -5
+            dnf -y install procps-ng brotli libmaxminddb gd libxslt 2>&1 | tail -5
             echo ""
 
             echo "=== dnf makecache ==="
