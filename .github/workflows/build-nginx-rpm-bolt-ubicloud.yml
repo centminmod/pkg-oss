@@ -73,7 +73,7 @@ jobs:
   # ============================================================
   build-and-profile:
     name: Build + Profile
-    runs-on: ubicloud-standard-4
+    runs-on: ubicloud-standard-8
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -336,7 +336,7 @@ jobs:
   bolt-optimize:
     name: BOLT optimize
     needs: build-and-profile
-    runs-on: ubicloud-standard-4
+    runs-on: ubicloud-standard-8
     steps:
       - name: Download BOLT profile + binary
         uses: actions/download-artifact@v4

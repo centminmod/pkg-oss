@@ -36,7 +36,7 @@ on:
 jobs:
   build:
     name: Build RPM (EL${{ matrix.el_version }}, crypto=${{ inputs.crypto || 'system' }}, zlib=${{ inputs.zlib || 'system' }})
-    runs-on: ubicloud-standard-4
+    runs-on: ubicloud-standard-8
     strategy:
       fail-fast: false
       matrix:
