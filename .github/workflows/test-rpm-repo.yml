@@ -1,0 +1,572 @@
+name: Test RPM Repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      variants:
+        description: 'Comma-separated variants to test'
+        required: false
+        default: 'stable,awslc,openssl,optimized,optimized-v4'
+        type: string
+      el_versions:
+        description: 'Comma-separated EL versions to test'
+        required: false
+        default: '9'
+        type: string
+
+jobs:
+  # ── Build matrix from inputs ──────────────────────────────
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Build matrix JSON
+        id: matrix
+        run: |
+          VARIANTS='${{ inputs.variants || 'stable,awslc,openssl,optimized,optimized-v4' }}'
+          EL_VERSIONS='${{ inputs.el_versions || '9' }}'
+
+          # Convert CSV to JSON arrays
+          V_JSON=$(echo "$VARIANTS" | tr ',' '\n' | jq -R . | jq -sc .)
+          E_JSON=$(echo "$EL_VERSIONS" | tr ',' '\n' | jq -R . | jq -sc .)
+
+          MATRIX=$(jq -nc --argjson v "$V_JSON" --argjson e "$E_JSON" \
+            '{variant: $v, el_version: $e}')
+
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "Matrix: $MATRIX"
+
+  # ── Test each variant × EL version ────────────────────────
+  test-variant:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    name: Test ${{ matrix.variant }}/el${{ matrix.el_version }}
+
+    steps:
+      - name: Test RPM repository
+        run: |
+          # Derive package name from variant
+          case "${{ matrix.variant }}" in
+            awslc)   PKG_NAME="centminmod-nginx-awslc" ;;
+            openssl) PKG_NAME="centminmod-nginx-openssl" ;;
+            *)       PKG_NAME="centminmod-nginx" ;;
+          esac
+
+          VARIANT="${{ matrix.variant }}"
+          EL="${{ matrix.el_version }}"
+          REPO_URL="https://rpm-nginx.centminmod.com/${VARIANT}/el/${EL}/\$basearch"
+
+          docker run --rm --name test-nginx \
+            -e PKG_NAME="$PKG_NAME" \
+            -e VARIANT="$VARIANT" \
+            -e EL="$EL" \
+            -e REPO_URL="$REPO_URL" \
+            almalinux:${EL} bash -c '
+          set -e
+          PASS=0; FAIL=0; RESULTS=""
+
+          pass() { PASS=$((PASS+1)); RESULTS="${RESULTS}\n  PASS: $1"; echo "PASS: $1"; }
+          fail() { FAIL=$((FAIL+1)); RESULTS="${RESULTS}\n  FAIL: $1"; echo "FAIL: $1"; }
+
+          echo "=========================================="
+          echo "Phase 1: Install from R2 — ${VARIANT}/el${EL}"
+          echo "=========================================="
+
+          # Create repo file
+          cat > /etc/yum.repos.d/centminmod-nginx-test.repo << REPOEOF
+          [centminmod-nginx-test]
+          name=Centmin Mod Nginx Test - EL${EL}
+          baseurl=${REPO_URL}
+          enabled=1
+          gpgcheck=0
+          metadata_expire=60
+          skip_if_unavailable=0
+          REPOEOF
+          # Strip leading whitespace from heredoc
+          sed -i "s/^          //" /etc/yum.repos.d/centminmod-nginx-test.repo
+
+          dnf makecache 2>&1 | tail -3
+
+          echo "Installing ${PKG_NAME}..."
+          dnf install -y ${PKG_NAME} 2>&1 | tail -5
+
+          echo "Installing all module RPMs..."
+          dnf install -y nginx-module-* 2>&1 | tail -5
+
+          echo "Installing test dependencies..."
+          dnf install -y redis curl jq procps-ng gd libxslt 2>&1 | tail -3
+
+          echo ""
+          echo "=========================================="
+          echo "Phase 2: Basic verification"
+          echo "=========================================="
+
+          # nginx -V
+          echo "--- nginx -V ---"
+          /usr/local/sbin/nginx -V 2>&1 | head -5
+          echo ""
+
+          # Count .so files
+          SO_COUNT=$(find /usr/local/nginx/modules/ -name "*.so" -not -name "*-debug.so" 2>/dev/null | wc -l)
+          echo "Module .so files: ${SO_COUNT}"
+          if [ "$SO_COUNT" -ge 28 ]; then pass "module .so count >= 28 (found ${SO_COUNT})"; else fail "module .so count < 28 (found ${SO_COUNT})"; fi
+
+          # Count drop-in configs
+          DROPIN_COUNT=$(ls /usr/local/nginx/conf/dynamic-modules.d/*.conf 2>/dev/null | wc -l)
+          echo "Drop-in configs: ${DROPIN_COUNT}"
+          if [ "$DROPIN_COUNT" -ge 20 ]; then pass "drop-in configs >= 20 (found ${DROPIN_COUNT})"; else fail "drop-in configs < 20 (found ${DROPIN_COUNT})"; fi
+
+          # nginx -t with shipped config
+          if /usr/local/sbin/nginx -t 2>&1; then
+            pass "nginx -t with shipped config"
+          else
+            fail "nginx -t with shipped config"
+          fi
+
+          echo ""
+          echo "=========================================="
+          echo "Phase 3: Module functional tests"
+          echo "=========================================="
+
+          # ── Setup test infrastructure ──
+          echo "--- Setting up test infrastructure ---"
+
+          # Start Redis
+          redis-server --daemonize yes --loglevel warning
+          sleep 1
+          redis-cli PING > /dev/null 2>&1 && echo "Redis: running" || echo "Redis: FAILED to start"
+
+          # Seed Redis test data
+          redis-cli SET /test-redis "redis_ok" > /dev/null
+          redis-cli SET mykey "redis2_ok" > /dev/null
+
+          # Create test directories
+          mkdir -p /usr/local/nginx/html/static
+          mkdir -p /usr/local/nginx/html/images
+          mkdir -p /usr/local/nginx/html/xslt
+          mkdir -p /tmp/dav
+
+          # CSS files for concat test
+          echo "/* file-a */" > /usr/local/nginx/html/static/a.css
+          echo "/* file-b */" > /usr/local/nginx/html/static/b.css
+
+          # 1x1 red PNG for image-filter test (valid minimal PNG)
+          printf "\x89PNG\r\n\x1a\n" > /usr/local/nginx/html/images/test.png
+          printf "\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde" >> /usr/local/nginx/html/images/test.png
+          printf "\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N" >> /usr/local/nginx/html/images/test.png
+          printf "\x00\x00\x00\x00IEND\xaeB\x60\x82" >> /usr/local/nginx/html/images/test.png
+
+          # NJS test script
+          cat > /usr/local/nginx/conf/test.js << NJSEOF
+          function hello(r) { r.return(200, "njs_ok"); }
+          export default { hello };
+          NJSEOF
+          sed -i "s/^          //" /usr/local/nginx/conf/test.js
+
+          # XSLT test files
+          echo "<?xml version=\"1.0\"?><root><title>xslt_ok</title></root>" > /usr/local/nginx/html/xslt/test.xml
+          cat > /usr/local/nginx/html/xslt/transform.xslt << XSLTEOF
+          <?xml version="1.0"?>
+          <xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+          <xsl:template match="/">
+          <html><body><xsl:value-of select="/root/title"/></body></html>
+          </xsl:template>
+          </xsl:stylesheet>
+          XSLTEOF
+          sed -i "s/^          //" /usr/local/nginx/html/xslt/transform.xslt
+
+          # Large text file for compression tests (brotli/zstd need min size)
+          dd if=/dev/urandom bs=1 count=4096 2>/dev/null | base64 > /usr/local/nginx/html/comptest.txt
+
+          # ── Write test nginx.conf ──
+          cat > /tmp/test-nginx.conf << CONFEOF
+          # Test config — exercises all 26 modules
+          include /usr/local/nginx/conf/dynamic-modules.conf;
+
+          worker_processes 1;
+          error_log /usr/local/nginx/logs/test-error.log info;
+          pid /tmp/test-nginx.pid;
+
+          events { worker_connections 64; }
+
+          http {
+              include /usr/local/nginx/conf/mime.types;
+              default_type application/octet-stream;
+
+              # Module configs: vts
+              vhost_traffic_status_zone;
+
+              # Module configs: encrypted-session
+              encrypted_session_key "abcdefghijklmnopqrstuvwxyz123456";
+              encrypted_session_iv "1234567812345678";
+              encrypted_session_expires 3600;
+
+              # Module configs: njs
+              js_path "/usr/local/nginx/conf/";
+              js_import test from test.js;
+
+              # Module configs: brotli
+              brotli on;
+              brotli_comp_level 6;
+              brotli_min_length 100;
+              brotli_types text/plain text/css application/json application/javascript text/xml;
+
+              # Module configs: zstd
+              zstd on;
+              zstd_comp_level 3;
+              zstd_min_length 100;
+              zstd_types text/plain text/css application/json application/javascript text/xml;
+
+              # Module configs: subs-filter (Tier 2 — validates directive parsing)
+              # Module configs: testcookie (Tier 2)
+              # Module configs: srcache, memc (Tier 2)
+
+              upstream redis_backend {
+                  server 127.0.0.1:6379;
+                  keepalive 10;
+              }
+
+              # Proxy cache for cache-purge test (Tier 2)
+              proxy_cache_path /tmp/nginx-cache keys_zone=test_cache:1m max_size=10m;
+
+              server {
+                  listen 8880;
+                  server_name localhost;
+                  root /usr/local/nginx/html;
+
+                  # Module: headers-more
+                  more_set_headers "X-Test-Module: headers_more_ok";
+
+                  # ── Tier 1: Functional tests ──
+
+                  # 1. echo
+                  location /test-echo {
+                      default_type text/plain;
+                      echo "echo_ok";
+                  }
+
+                  # 2. headers-more (tested via default header above)
+                  location /test-headers-more {
+                      default_type text/plain;
+                      return 200 "ok";
+                  }
+
+                  # 3. set-misc + ndk
+                  location /test-set-misc {
+                      default_type text/plain;
+                      set_md5 \$md5val "test_input";
+                      set_encode_base64 \$b64val "test_input";
+                      echo "md5=\$md5val b64=\$b64val";
+                  }
+
+                  # 4. lua + ndk
+                  location /test-lua {
+                      default_type text/plain;
+                      content_by_lua_block {
+                          ngx.say("lua_ok")
+                      }
+                  }
+
+                  # 5. njs
+                  location /test-njs {
+                      js_content test.hello;
+                  }
+
+                  # 6. encrypted-session + ndk
+                  location /test-encrypted-session {
+                      default_type text/plain;
+                      set \$raw_val "session_test_data";
+                      set_encrypt_session \$enc_val \$raw_val;
+                      set_encode_base64 \$b64_enc \$enc_val;
+                      echo \$b64_enc;
+                  }
+
+                  # 7. brotli (serve compressible file)
+                  location /test-brotli {
+                      default_type text/plain;
+                      alias /usr/local/nginx/html/comptest.txt;
+                  }
+
+                  # 8. zstd (serve compressible file)
+                  location /test-zstd {
+                      default_type text/plain;
+                      alias /usr/local/nginx/html/comptest.txt;
+                  }
+
+                  # 9. vts
+                  location /test-vts {
+                      vhost_traffic_status_display;
+                      vhost_traffic_status_display_format json;
+                  }
+
+                  # 10. fancyindex
+                  location /test-fancyindex {
+                      alias /usr/local/nginx/html/static/;
+                      fancyindex on;
+                  }
+
+                  # 11. image-filter
+                  location /test-image-filter/test.png {
+                      alias /usr/local/nginx/html/images/test.png;
+                      image_filter resize 1 1;
+                  }
+
+                  # 12. http-redis
+                  location /test-redis {
+                      set \$redis_key \$uri;
+                      redis_pass redis_backend;
+                  }
+
+                  # 13. redis2
+                  location /test-redis2 {
+                      default_type text/plain;
+                      redis2_query get mykey;
+                      redis2_pass redis_backend;
+                  }
+
+                  # 14. xslt
+                  location /test-xslt {
+                      default_type application/xml;
+                      alias /usr/local/nginx/html/xslt/test.xml;
+                      xslt_stylesheet /usr/local/nginx/html/xslt/transform.xslt;
+                      xslt_types application/xml text/xml;
+                  }
+
+                  # 15. accesskey (should return 403 without valid key)
+                  location /test-accesskey {
+                      default_type text/plain;
+                      accesskey on;
+                      accesskey_hashmethod md5;
+                      accesskey_arg key;
+                      accesskey_signature "testsecret\$uri";
+                      echo "accesskey_ok";
+                  }
+
+                  # 16. dav-ext
+                  location /test-dav-ext {
+                      alias /tmp/dav/;
+                      dav_methods PUT DELETE MKCOL COPY MOVE;
+                      dav_ext_methods PROPFIND OPTIONS;
+                  }
+
+                  # 17. http-concat
+                  location /test-concat/ {
+                      alias /usr/local/nginx/html/static/;
+                      concat on;
+                      concat_max_files 10;
+                  }
+
+                  # ── Tier 2: Config-validates (presence of directive = module works) ──
+
+                  # 18. cache-purge
+                  location /test-cache-purge {
+                      proxy_pass http://127.0.0.1:8880/test-echo;
+                      proxy_cache test_cache;
+                      proxy_cache_key "\$scheme\$host\$request_uri";
+                      proxy_cache_purge PURGE from 127.0.0.1;
+                  }
+
+                  # 19. srcache
+                  location /test-srcache-fetch {
+                      internal;
+                      redis2_pass redis_backend;
+                  }
+                  location /test-srcache {
+                      default_type text/plain;
+                      srcache_fetch GET /test-srcache-fetch key=\$uri;
+                      srcache_store PUT /test-srcache-fetch key=\$uri;
+                      echo "srcache_config_ok";
+                  }
+
+                  # 20. memc
+                  location /test-memc {
+                      internal;
+                      set \$memc_cmd get;
+                      set \$memc_key \$arg_key;
+                      memc_pass 127.0.0.1:11211;
+                  }
+
+                  # 21. testcookie
+                  location /test-testcookie {
+                      default_type text/plain;
+                      testcookie on;
+                      testcookie_secret "abcdefghijklmnop0123456789abcdef";
+                      testcookie_session \$remote_addr;
+                      testcookie_max_attempts 3;
+                      testcookie_fallback /test-echo;
+                      return 200 "testcookie_ok";
+                  }
+
+                  # 22. http-rdns
+                  location /test-rdns {
+                      resolver 8.8.8.8;
+                      rdns double;
+                      default_type text/plain;
+                      return 200 "rdns_ok";
+                  }
+
+                  # 23. length-hiding (Tier 3: load-only, directive validates)
+                  location /test-length-hiding {
+                      default_type text/plain;
+                      length_hiding on;
+                      length_hiding_max 256;
+                      return 200 "length_hiding_ok";
+                  }
+              }
+          }
+          CONFEOF
+          sed -i "s/^          //" /tmp/test-nginx.conf
+
+          # ── Validate test config ──
+          echo ""
+          echo "--- Validating test config ---"
+          if /usr/local/sbin/nginx -t -c /tmp/test-nginx.conf 2>&1; then
+            pass "nginx -t test config"
+          else
+            fail "nginx -t test config"
+            echo "FATAL: test config invalid, dumping errors:"
+            /usr/local/sbin/nginx -T -c /tmp/test-nginx.conf 2>&1 | tail -20
+            echo -e "\n${RESULTS}"
+            exit 1
+          fi
+
+          # ── Start nginx with test config ──
+          /usr/local/sbin/nginx -c /tmp/test-nginx.conf
+          sleep 1
+
+          echo ""
+          echo "--- Running module functional tests ---"
+
+          # ── Tier 1: Functional tests ──
+
+          # 1. echo
+          BODY=$(curl -sf http://127.0.0.1:8880/test-echo 2>/dev/null || true)
+          if echo "$BODY" | grep -q "echo_ok"; then pass "echo: response body"; else fail "echo: expected echo_ok, got: $BODY"; fi
+
+          # 2. headers-more
+          HDR=$(curl -sI http://127.0.0.1:8880/test-headers-more 2>/dev/null | grep -i "X-Test-Module" || true)
+          if echo "$HDR" | grep -q "headers_more_ok"; then pass "headers-more: custom header"; else fail "headers-more: missing X-Test-Module header"; fi
+
+          # 3. set-misc + ndk
+          BODY=$(curl -sf http://127.0.0.1:8880/test-set-misc 2>/dev/null || true)
+          if echo "$BODY" | grep -q "md5="; then pass "set-misc + ndk: md5/base64"; else fail "set-misc: expected md5=, got: $BODY"; fi
+
+          # 4. lua
+          BODY=$(curl -sf http://127.0.0.1:8880/test-lua 2>/dev/null || true)
+          if echo "$BODY" | grep -q "lua_ok"; then pass "lua: content_by_lua_block"; else fail "lua: expected lua_ok, got: $BODY"; fi
+
+          # 5. njs
+          BODY=$(curl -sf http://127.0.0.1:8880/test-njs 2>/dev/null || true)
+          if echo "$BODY" | grep -q "njs_ok"; then pass "njs: js_content"; else fail "njs: expected njs_ok, got: $BODY"; fi
+
+          # 6. encrypted-session
+          BODY=$(curl -sf http://127.0.0.1:8880/test-encrypted-session 2>/dev/null || true)
+          if [ -n "$BODY" ] && [ ${#BODY} -gt 10 ]; then pass "encrypted-session: encrypted output (${#BODY} chars)"; else fail "encrypted-session: empty or too short"; fi
+
+          # 7. brotli
+          HDR=$(curl -sI -H "Accept-Encoding: br" http://127.0.0.1:8880/test-brotli 2>/dev/null | grep -i "Content-Encoding" || true)
+          if echo "$HDR" | grep -qi "br"; then pass "brotli: Content-Encoding: br"; else fail "brotli: no br encoding in response"; fi
+
+          # 8. zstd
+          HDR=$(curl -sI -H "Accept-Encoding: zstd" http://127.0.0.1:8880/test-zstd 2>/dev/null | grep -i "Content-Encoding" || true)
+          if echo "$HDR" | grep -qi "zstd"; then pass "zstd: Content-Encoding: zstd"; else fail "zstd: no zstd encoding in response"; fi
+
+          # 9. vts
+          BODY=$(curl -sf http://127.0.0.1:8880/test-vts 2>/dev/null || true)
+          if echo "$BODY" | grep -q "hostName"; then pass "vts: traffic status JSON"; else fail "vts: expected hostName in JSON"; fi
+
+          # 10. fancyindex
+          BODY=$(curl -sf http://127.0.0.1:8880/test-fancyindex 2>/dev/null || true)
+          if echo "$BODY" | grep -qi "fancyindex"; then pass "fancyindex: directory listing"; else fail "fancyindex: no fancyindex in response"; fi
+
+          # 11. image-filter
+          CT=$(curl -sI http://127.0.0.1:8880/test-image-filter/test.png 2>/dev/null | grep -i "Content-Type" || true)
+          if echo "$CT" | grep -qi "image"; then pass "image-filter: image Content-Type"; else fail "image-filter: expected image Content-Type, got: $CT"; fi
+
+          # 12. http-redis
+          BODY=$(curl -sf http://127.0.0.1:8880/test-redis 2>/dev/null || true)
+          if echo "$BODY" | grep -q "redis_ok"; then pass "http-redis: GET from Redis"; else fail "http-redis: expected redis_ok, got: $BODY"; fi
+
+          # 13. redis2
+          BODY=$(curl -sf http://127.0.0.1:8880/test-redis2 2>/dev/null || true)
+          if echo "$BODY" | grep -q "redis2_ok"; then pass "redis2: GET query"; else fail "redis2: expected redis2_ok, got: $BODY"; fi
+
+          # 14. xslt
+          BODY=$(curl -sf http://127.0.0.1:8880/test-xslt 2>/dev/null || true)
+          if echo "$BODY" | grep -q "xslt_ok"; then pass "xslt: XML transformation"; else fail "xslt: expected xslt_ok, got: $BODY"; fi
+
+          # 15. accesskey (should deny without key)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8880/test-accesskey 2>/dev/null || true)
+          if [ "$HTTP_CODE" = "403" ]; then pass "accesskey: 403 without key"; else fail "accesskey: expected 403, got $HTTP_CODE"; fi
+
+          # 16. dav-ext (PROPFIND)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PROPFIND http://127.0.0.1:8880/test-dav-ext/ 2>/dev/null || true)
+          if [ "$HTTP_CODE" = "207" ] || [ "$HTTP_CODE" = "200" ]; then pass "dav-ext: PROPFIND ($HTTP_CODE)"; else fail "dav-ext: expected 207/200, got $HTTP_CODE"; fi
+
+          # 17. http-concat
+          BODY=$(curl -sf "http://127.0.0.1:8880/test-concat/??a.css,b.css" 2>/dev/null || true)
+          if echo "$BODY" | grep -q "file-a" && echo "$BODY" | grep -q "file-b"; then pass "http-concat: concatenated files"; else fail "http-concat: expected both files, got: $BODY"; fi
+
+          echo ""
+          echo "--- Tier 2: Config-validates (nginx -t passed = directives accepted) ---"
+
+          # These modules are validated by nginx -t succeeding with their directives in config:
+          # cache-purge (proxy_cache_purge), srcache (srcache_fetch/store),
+          # memc (memc_pass), testcookie (testcookie on), http-rdns (rdns double),
+          # length-hiding (length_hiding on)
+          for mod in cache-purge srcache memc testcookie http-rdns length-hiding; do
+            pass "${mod}: config directive accepted"
+          done
+
+          echo ""
+          echo "--- Tier 3: Load-only tests ---"
+
+          # geoip2: module loads but needs MaxMind DB for variable tests (no license in CI)
+          if find /usr/local/nginx/modules/ -name "*geoip2*" | grep -q .; then
+            pass "geoip2: module .so present"
+          else
+            fail "geoip2: module .so missing"
+          fi
+
+          # ndk: dependency module — verified via set-misc/lua/encrypted-session tests above
+          pass "ndk: verified via set-misc + lua + encrypted-session"
+
+          echo ""
+          echo "=========================================="
+          echo "Phase 4: Results — ${VARIANT}/el${EL}"
+          echo "=========================================="
+          echo ""
+
+          # Nginx stop
+          /usr/local/sbin/nginx -s stop -c /tmp/test-nginx.conf 2>/dev/null || true
+
+          TOTAL=$((PASS + FAIL))
+          TIER1_EXPECTED=17
+          TIER2_EXPECTED=6
+          TIER3_EXPECTED=2
+
+          echo "  Tier 1 (functional):  tested"
+          echo "  Tier 2 (config):      tested"
+          echo "  Tier 3 (load):        tested"
+          echo "  ────────────────────────"
+          echo "  Passed: ${PASS}/${TOTAL}"
+          echo "  Failed: ${FAIL}/${TOTAL}"
+          echo ""
+          echo -e "Detailed results:${RESULTS}"
+          echo ""
+          echo "=========================================="
+
+          if [ $FAIL -gt 0 ]; then
+            echo "FAIL: ${FAIL} test(s) failed for ${VARIANT}/el${EL}"
+            echo ""
+            echo "--- Error log tail ---"
+            tail -30 /usr/local/nginx/logs/test-error.log 2>/dev/null || true
+            exit 1
+          else
+            echo "ALL TESTS PASSED for ${VARIANT}/el${EL}"
+          fi
+          '
