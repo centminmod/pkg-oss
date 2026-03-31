@@ -737,6 +737,9 @@ jobs:
             }
             echo ""
 
+            # EL8 modular filtering blocks nginx-related packages; disable the module stream
+            dnf module disable -y nginx 2>/dev/null || true
+
             echo "=== dnf install base + all modules ==="
             dnf install -y --enablerepo=centminmod-nginx-test --allowerasing \
               "${BASE_PKG}" "nginx-module-*" 2>&1
