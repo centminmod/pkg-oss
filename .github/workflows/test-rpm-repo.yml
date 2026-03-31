@@ -91,6 +91,9 @@ jobs:
 
           dnf makecache 2>&1 | tail -3
 
+          # EL8 modular filtering blocks nginx-related packages; disable the module stream
+          dnf module disable -y nginx 2>/dev/null || true
+
           echo "Installing ${PKG_NAME}..."
           dnf install -y ${PKG_NAME} 2>&1 | tail -5
 
