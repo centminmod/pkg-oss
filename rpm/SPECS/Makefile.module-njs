@@ -46,20 +46,17 @@ fi
 
 %define __with_quickjs %{nil}
 %if (0%{?rhel} >= 8) || (0%{?amzn} >= 2023) || (0%{?suse_version} >= 1500)
-QJS_CFLAGS=$$(echo "%{WITH_CC_OPT}" | sed 's/-isystem [^ ]*//g') \&\& \
 cd %{bdir}/quickjs-$(QUICKJS_GITHASH) \&\& \
-CFLAGS="$$QJS_CFLAGS -fPIC" make $$_make_opts libquickjs.a
+CFLAGS="%{WITH_CC_OPT} -fPIC" make $$_make_opts libquickjs.a
 %define __with_quickjs --with-quickjs
 %endif
 cd %{bdir}/njs-$(NJS_VERSION) \&\& \
 sed -i.bak 's,-lquickjs.lto ,-lquickjs.lto -latomic ,g' auto/quickjs \&\& \
 sed -i.bak 's,-lquickjs ,-lquickjs -latomic ,g' auto/quickjs \&\& \
-NJS_CC_OPT=$$(echo "%{WITH_CC_OPT}" | sed 's/-isystem [^ ]*//g') \&\& \
-NJS_LD_OPT=$$(echo "%{WITH_LD_OPT}" | sed 's/-L[^ ]*nginx-dep[^ ]*//g; s/ -lssl -lcrypto -lpthread -ldl//g') \&\& \
 ./configure \
 	%{__with_quickjs} \
-	--cc-opt="$$NJS_CC_OPT -I%{bdir}/quickjs-$(QUICKJS_GITHASH)/" \
-	--ld-opt="$$NJS_LD_OPT -L%{bdir}/quickjs-$(QUICKJS_GITHASH)/" \&\& \
+	--cc-opt=\"%{WITH_CC_OPT}\ -I%{bdir}/quickjs-$(QUICKJS_GITHASH)/" \
+	--ld-opt=\"%{WITH_LD_OPT}\ -L%{bdir}/quickjs-$(QUICKJS_GITHASH)/" \&\& \
 make $$_make_opts njs \&\& \
 mv build build-cli || true
 cp %{bdir}/njs-$(NJS_VERSION)/build-cli/njs %{bdir}/njs-cli-binary 2>/dev/null || echo "WARNING: njs CLI binary not available"

@@ -150,8 +150,9 @@ BuildRequires: mold
 %define MODULE_CONFIGURE_ARGS $(echo "%%MODULE_CONFIGURE_ARGS%%")
 
 %if "%{crypto_lib}" == "awslc"
-%define CRYPTO_CC_OPT -isystem %{bdir}/nginx-dep/include
-%define CRYPTO_LD_OPT -L%{bdir}/nginx-dep/lib64 -lssl -lcrypto -lpthread -ldl
+%define AWSLC_PREFIX /tmp/awslc-prebuilt
+%define CRYPTO_CC_OPT -isystem %{AWSLC_PREFIX}/include
+%define CRYPTO_LD_OPT -L%{AWSLC_PREFIX}/lib64 -lssl -lcrypto -lpthread -ldl
 %define CRYPTO_CONFIGURE_ARGS %{nil}
 %define CRYPTO_POST_CONFIGURE %{nil}
 %endif
