@@ -190,14 +190,22 @@ jobs:
           echo "=== Package set verification ==="
 
           # Count base RPMs (exclude debuginfo, modules, src.rpm)
-          BASE_RPMS=$(ls downloaded-rpms/centminmod-nginx*.x86_64.rpm 2>/dev/null \
+          BASE_RPMS=$(ls -1 downloaded-rpms/centminmod-nginx*.x86_64.rpm 2>/dev/null \
             | grep -v debuginfo | grep -v debugsource | grep -v "nginx-module" || true)
-          BASE_COUNT=$(echo "$BASE_RPMS" | grep -c '\.rpm$' 2>/dev/null || echo 0)
+          if [ -n "$BASE_RPMS" ]; then
+            BASE_COUNT=$(echo "$BASE_RPMS" | wc -l)
+          else
+            BASE_COUNT=0
+          fi
 
           # Count module RPMs (exclude debuginfo)
-          MODULE_RPMS=$(ls downloaded-rpms/nginx-module-*.x86_64.rpm 2>/dev/null \
+          MODULE_RPMS=$(ls -1 downloaded-rpms/nginx-module-*.x86_64.rpm 2>/dev/null \
             | grep -v debuginfo | grep -v debugsource || true)
-          MODULE_COUNT=$(echo "$MODULE_RPMS" | grep -c '\.rpm$' 2>/dev/null || echo 0)
+          if [ -n "$MODULE_RPMS" ]; then
+            MODULE_COUNT=$(echo "$MODULE_RPMS" | wc -l)
+          else
+            MODULE_COUNT=0
+          fi
 
           echo "Base RPMs:   $BASE_COUNT"
           echo "Module RPMs: $MODULE_COUNT"
