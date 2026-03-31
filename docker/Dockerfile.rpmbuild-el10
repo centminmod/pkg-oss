@@ -7,6 +7,7 @@ RUN dnf -y groupinstall 'Development Tools' && \
     dnf -y install zlib-devel pcre2-devel openssl-devel systemd-devel mold \
     wget tar gzip xz rpm-build rpmdevtools \
     libxml2-devel libxslt-devel \
+    gcc-toolset-15-gcc gcc-toolset-15-gcc-c++ \
     cmake ninja-build golang perl-core \
     brotli-devel libmaxminddb-devel gd-devel libedit-devel libatomic \
     libzstd-devel perl-devel perl-ExtUtils-Embed which && \
@@ -39,9 +40,12 @@ ZLIB=${ZLIB:-system} && \
 LTO=${LTO:-n} && \
 MARCH=${MARCH:-generic} && \
 LINKER=${LINKER:-default} && \
+AUTOFDO=${AUTOFDO:-none} && \
 if [ \"$LTO\" = \"y\" ]; then BUILD_INFO=\"${BUILD_INFO}-lto\"; fi && \
 if [ \"$MARCH\" != \"generic\" ]; then BUILD_INFO=\"${BUILD_INFO}-${MARCH}\"; fi && \
 if [ \"$LINKER\" != \"default\" ]; then BUILD_INFO=\"${BUILD_INFO}-${LINKER}\"; fi && \
+if [ \"$BOLT\" = \"y\" ]; then BUILD_INFO=\"${BUILD_INFO}-bolt\"; fi && \
+if [ \"$AUTOFDO\" != \"none\" ] && [ -n \"$AUTOFDO\" ]; then BUILD_INFO=\"${BUILD_INFO}-autofdo\"; fi && \
 echo '========================================' && \
 echo '=== Phase: Download sources ===' && \
 T0=$(date +%s) && \
@@ -56,7 +60,7 @@ if [ \"$ZLIB\" = \"cloudflare\" ]; then ln -sf /home/builder/contrib/tarballs/zl
 T1=$(date +%s) && echo \"  Download sources: $((T1-T0))s\" && \
 echo '=== Phase: Generate spec ===' && \
 cd /home/builder/rpmbuild/SPECS && \
-make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO} MARCH=${MARCH} LINKER=${LINKER} nginx.spec && \
+make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO} MARCH=${MARCH} LINKER=${LINKER} AUTOFDO=${AUTOFDO} nginx.spec && \
 T2=$(date +%s) && echo \"  Generate spec: $((T2-T1))s\" && \
 echo '=== Phase: rpmbuild ===' && \
 rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && \
