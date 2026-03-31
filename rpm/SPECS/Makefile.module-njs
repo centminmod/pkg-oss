@@ -46,8 +46,9 @@ fi
 
 %define __with_quickjs %{nil}
 %if (0%{?rhel} >= 8) || (0%{?amzn} >= 2023) || (0%{?suse_version} >= 1500)
+QJS_CFLAGS=$$(echo "%{WITH_CC_OPT}" | sed 's/-isystem [^ ]*//g') \&\& \
 cd %{bdir}/quickjs-$(QUICKJS_GITHASH) \&\& \
-CFLAGS="%{WITH_CC_OPT} -fPIC" make $$_make_opts libquickjs.a
+CFLAGS="$$QJS_CFLAGS -fPIC" make $$_make_opts libquickjs.a
 %define __with_quickjs --with-quickjs
 %endif
 cd %{bdir}/njs-$(NJS_VERSION) \&\& \
