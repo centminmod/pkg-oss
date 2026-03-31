@@ -108,9 +108,9 @@ if [ ! -f "$${AWSLC_PREFIX}/include/openssl/ssl.h" ]; then
   unset CFLAGS CXXFLAGS LDFLAGS
   mkdir -p "$${AWSLC_PREFIX}"
   cd %{_builddir}
-  mkdir -p awslc-module-build && cd awslc-module-build
+  mkdir -p awslc-module-build \&\& cd awslc-module-build
   CMAKE_CMD=cmake
-  if command -v cmake3 >/dev/null 2>&1; then CMAKE_CMD=cmake3; fi
+  if command -v cmake3 >/dev/null 2>\&1; then CMAKE_CMD=cmake3; fi
   $${CMAKE_CMD} \
     -GNinja \
     -DCMAKE_BUILD_TYPE=Release \
