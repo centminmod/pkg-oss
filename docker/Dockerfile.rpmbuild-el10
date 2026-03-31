@@ -30,6 +30,7 @@ USER builder
 WORKDIR /home/builder/rpmbuild
 
 CMD ["bash", "-ce", "\
+TOTAL_START=$(date +%s) && \
 BUILD_DATE=$(date +%d%m%y-%H%M%S) && \
 BUILD_OS=almalinux$(rpm -E %{rhel}) && \
 BUILD_INFO=${BUILD_DATE}-${BUILD_OS}-rpm && \
@@ -41,6 +42,9 @@ LINKER=${LINKER:-default} && \
 if [ \"$LTO\" = \"y\" ]; then BUILD_INFO=\"${BUILD_INFO}-lto\"; fi && \
 if [ \"$MARCH\" != \"generic\" ]; then BUILD_INFO=\"${BUILD_INFO}-${MARCH}\"; fi && \
 if [ \"$LINKER\" != \"default\" ]; then BUILD_INFO=\"${BUILD_INFO}-${LINKER}\"; fi && \
+echo '========================================' && \
+echo '=== Phase: Download sources ===' && \
+T0=$(date +%s) && \
 cd /home/builder/contrib && make .sum-nginx && \
 if [ \"$CRYPTO\" = \"awslc\" ]; then make .sum-awslc; fi && \
 if [ \"$CRYPTO\" = \"openssl\" ]; then make .sum-openssl; fi && \
@@ -49,8 +53,23 @@ ln -sf /home/builder/contrib/tarballs/nginx-*.tar.gz /home/builder/rpmbuild/SOUR
 if [ \"$CRYPTO\" = \"awslc\" ]; then ln -sf /home/builder/contrib/tarballs/aws-lc-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
 if [ \"$CRYPTO\" = \"openssl\" ]; then ln -sf /home/builder/contrib/tarballs/openssl-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
 if [ \"$ZLIB\" = \"cloudflare\" ]; then ln -sf /home/builder/contrib/tarballs/zlib-*.tar.gz /home/builder/rpmbuild/SOURCES/; fi && \
+T1=$(date +%s) && echo \"  Download sources: $((T1-T0))s\" && \
+echo '=== Phase: Generate spec ===' && \
 cd /home/builder/rpmbuild/SPECS && \
 make CONTRIB=/home/builder/contrib DOCS=/home/builder/docs BUILD_INFO=${BUILD_INFO} CRYPTO=${CRYPTO} ZLIB=${ZLIB} LTO=${LTO} MARCH=${MARCH} LINKER=${LINKER} nginx.spec && \
+T2=$(date +%s) && echo \"  Generate spec: $((T2-T1))s\" && \
+echo '=== Phase: rpmbuild ===' && \
 rpmbuild --define '_topdir /home/builder/rpmbuild' -ba nginx.spec && \
+T3=$(date +%s) && echo \"  rpmbuild: $((T3-T2))s\" && \
+echo '=== Phase: Copy RPMs ===' && \
 find ../RPMS ../SRPMS -name '*.rpm' -exec cp -v {} /output/ \\; && \
+T4=$(date +%s) && echo \"  Copy RPMs: $((T4-T3))s\" && \
+echo '========================================' && \
+echo \"=== BUILD TIMING SUMMARY ===\" && \
+echo \"  Download sources: $((T1-T0))s\" && \
+echo \"  Generate spec:    $((T2-T1))s\" && \
+echo \"  rpmbuild:         $((T3-T2))s  ($((( T3-T2 ) / 60))m $(((T3-T2) % 60))s)\" && \
+echo \"  Copy RPMs:        $((T4-T3))s\" && \
+echo \"  Total:            $((T4-TOTAL_START))s  ($((( T4-TOTAL_START ) / 60))m $(((T4-TOTAL_START) % 60))s)\" && \
+echo '========================================' && \
 echo 'Build complete. RPMs:' && ls -lh /output/"]

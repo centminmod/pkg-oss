@@ -67,10 +67,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -f docker/Dockerfile.rpmbuild-el${{ matrix.el_version }} -t rpmbuild:el${{ matrix.el_version }} .
+        run: |
+          T_START=$(date +%s)
+          docker build -f docker/Dockerfile.rpmbuild-el${{ matrix.el_version }} -t rpmbuild:el${{ matrix.el_version }} .
+          T_END=$(date +%s)
+          echo "Docker image build: $((T_END-T_START))s"
 
       - name: Build RPMs
-        run: mkdir -p output && chmod 777 output && docker run --rm -e CRYPTO=${{ inputs.crypto || 'system' }} -e ZLIB=${{ inputs.zlib || 'system' }} -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
+        run: |
+          mkdir -p output && chmod 777 output
+          T_START=$(date +%s)
+          docker run --rm -e CRYPTO=${{ inputs.crypto || 'system' }} -e ZLIB=${{ inputs.zlib || 'system' }} -v ${{ github.workspace }}/output:/output rpmbuild:el${{ matrix.el_version }}
+          T_END=$(date +%s)
+          echo "Build RPMs total: $((T_END-T_START))s  ($(((T_END-T_START)/60))m $(((T_END-T_START)%60))s)"
 
       - name: Build module RPMs
         run: |
