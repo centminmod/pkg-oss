@@ -98,10 +98,25 @@ jobs:
           dnf install -y ${PKG_NAME} 2>&1 | tail -5
 
           echo "Installing all module RPMs..."
-          dnf install -y nginx-module-* 2>&1 | tail -5
+          dnf install -y nginx-module-* 2>&1
+
+          echo ""
+          echo "=== Installed centminmod/nginx RPM packages ==="
+          rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' | grep -E "centminmod-nginx|nginx-module" | sort
+          echo ""
+
+          echo "=== RPM dependencies (auto-resolved by dnf) ==="
+          for pkg in $(rpm -qa --qf '%{NAME}\n' | grep -E "centminmod-nginx|nginx-module" | sort); do
+            DEPS=$(rpm -qR "$pkg" | grep -vE "^rpmlib|^config|^/bin/sh|^rtld" | sort)
+            if [ -n "$DEPS" ]; then
+              echo "--- $pkg ---"
+              echo "$DEPS"
+              echo ""
+            fi
+          done
 
           echo "Installing test dependencies..."
-          dnf install -y --allowerasing redis jq procps-ng gd libxslt 2>&1 | tail -3
+          dnf install -y --allowerasing redis jq procps-ng brotli libmaxminddb gd libxslt libxml2 libzstd 2>&1 | tail -3
 
           echo ""
           echo "=========================================="

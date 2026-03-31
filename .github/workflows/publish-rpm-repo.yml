@@ -458,7 +458,7 @@ jobs:
           <div class="wrap">
 
           <h2>Getting Started</h2>
-          <p>Set up the repository on your server and install Nginx in two steps:</p>
+          <p>Set up the repository on your server and install Nginx:</p>
           <pre><span class="cmt"># Step 1 &mdash; Add the repository</span>
           cat &gt; /etc/yum.repos.d/centminmod-nginx.repo &lt;&lt; 'EOF'
           [centminmod-nginx]
@@ -468,8 +468,11 @@ jobs:
           gpgcheck=0
           EOF
 
-          <span class="cmt"># Step 2 &mdash; Install</span>
-          dnf install centminmod-nginx</pre>
+          <span class="cmt"># EL8 only: disable nginx module stream to avoid conflicts</span>
+          dnf module disable -y nginx  <span class="cmt"># skip on EL9/EL10</span>
+
+          <span class="cmt"># Step 2 &mdash; Install Nginx (+ all modules, optional)</span>
+          dnf install -y centminmod-nginx nginx-module-*</pre>
 
           <p>Start and enable Nginx:</p>
           <pre>systemctl start nginx
@@ -491,6 +494,23 @@ jobs:
 
           <span class="cmt"># See everything available</span>
           dnf list available nginx-module-*</pre>
+
+          <h2>Prerequisites</h2>
+          <p>Most dependencies are resolved automatically by dnf. Some modules require system libraries that dnf will pull in when you install them:</p>
+          <table>
+          <tr><th>System Package</th><th>Required By</th><th>Notes</th></tr>
+          <tr><td><code>procps-ng</code></td><td>centminmod-nginx (base)</td><td>Explicit RPM dependency</td></tr>
+          <tr><td><code>brotli</code></td><td>nginx-module-brotli</td><td>Auto-resolved by dnf</td></tr>
+          <tr><td><code>libmaxminddb</code></td><td>nginx-module-geoip2</td><td>Auto-resolved by dnf</td></tr>
+          <tr><td><code>gd</code></td><td>nginx-module-image-filter</td><td>Auto-resolved by dnf</td></tr>
+          <tr><td><code>libxslt</code></td><td>nginx-module-xslt, nginx-module-dav-ext</td><td>Auto-resolved by dnf</td></tr>
+          <tr><td><code>libxml2</code></td><td>nginx-module-xslt, nginx-module-dav-ext</td><td>Auto-resolved by dnf</td></tr>
+          <tr><td><code>libzstd</code></td><td>nginx-module-zstd</td><td>Auto-resolved by dnf</td></tr>
+          </table>
+          <p>On minimal installs, you can pre-install all prerequisites at once:</p>
+          <pre>dnf install -y procps-ng brotli libmaxminddb gd libxslt libxml2 libzstd</pre>
+          <p><strong>EL8 only:</strong> Run <code>dnf module disable -y nginx</code> before installing to avoid modular filtering conflicts.</p>
+          <p><strong>Module dependencies:</strong> <code>nginx-module-lua</code>, <code>nginx-module-set-misc</code>, and <code>nginx-module-encrypted-session</code> require <code>nginx-module-ndk</code> &mdash; resolved automatically by dnf.</p>
 
           <h2>Available Modules</h2>
           <p>Install any module with <code>dnf install nginx-module-&lt;name&gt;</code>. Each module auto-configures itself via drop-in config.</p>
@@ -706,7 +726,7 @@ jobs:
             echo ""
 
             echo "=== Install system dependencies ==="
-            dnf -y install procps-ng brotli libmaxminddb gd libxslt 2>&1 | tail -5
+            dnf -y install procps-ng brotli libmaxminddb gd libxslt libxml2 libzstd 2>&1 | tail -5
             echo ""
 
             echo "=== dnf makecache ==="
@@ -744,6 +764,17 @@ jobs:
             dnf install -y --enablerepo=centminmod-nginx-test --allowerasing \
               "${BASE_PKG}" "nginx-module-*" 2>&1
             echo ""
+
+            echo "=== Installed centminmod/nginx RPM packages ==="
+            rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' | grep -E "centminmod-nginx|nginx-module" | sort
+            echo ""
+
+            echo "=== RPM dependencies (auto-resolved by dnf) ==="
+            for pkg in $(rpm -qa --qf '%{NAME}\n' | grep -E "centminmod-nginx|nginx-module" | sort); do
+              echo "--- $pkg ---"
+              rpm -qR "$pkg" | grep -vE "^rpmlib|^config|^/bin/sh" | sort
+              echo ""
+            done
 
             echo "=== Verify installation ==="
             PASS=0; FAIL=0
