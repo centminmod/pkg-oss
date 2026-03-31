@@ -768,7 +768,7 @@ jobs:
                 echo "--- HTTP/2+TLS run ${run}/3 ---"
                 h2load -n 100000 -c 100 -m 50 -t 4 https://127.0.0.1:8443/ 2>&1 | tee /tmp/h2load_run${run}.txt | grep -E "finished in|requests:|req/s|time for request|time for connect|status codes"
                 # Check for 100% failed requests
-                if grep -q "0 succeeded" /tmp/h2load_run${run}.txt 2>/dev/null; then
+                if grep -qE ", 0 succeeded," /tmp/h2load_run${run}.txt 2>/dev/null; then
                   echo "ERROR: h2load run ${run} had 0 succeeded requests"
                   BENCH_ERRORS=1
                 fi
