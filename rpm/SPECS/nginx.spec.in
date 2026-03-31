@@ -263,10 +263,11 @@ cd %{bdir}
 %endif
 %if 0%{?rhel} == 10
 . /usr/lib/gcc-toolset/15-env.source
-# Unset rpmbuild LDFLAGS — EL10's redhat-hardened-ld-errors spec converts
-# linker warnings to errors under gcc-toolset-15, breaking nginx configure.
-# Our --with-ld-opt and --with-cc-opt provide all needed hardening flags.
-unset LDFLAGS
+# Unset rpmbuild flags — EL10's -specs= files (redhat-hardened-cc1,
+# redhat-hardened-ld-errors, redhat-annobin-cc1) inject flags that conflict
+# with gcc-toolset-15, breaking nginx configure's ld-opt test.
+# Our --with-cc-opt and --with-ld-opt provide all needed hardening flags.
+unset CFLAGS CXXFLAGS LDFLAGS
 %endif
 echo "GCC version: $(gcc --version | head -1)"
 
