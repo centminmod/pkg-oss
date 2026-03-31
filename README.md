@@ -11,7 +11,7 @@ Production-grade Nginx RPM packages for **AlmaLinux/Rocky Linux 8, 9, and 10**, 
 ## Quick Install
 
 ```bash
-# AlmaLinux/Rocky Linux 9
+# AlmaLinux/Rocky Linux 8/9/10
 cat > /etc/yum.repos.d/centminmod-nginx.repo << 'EOF'
 [centminmod-nginx]
 name=Centmin Mod Nginx - EL$releasever - $basearch
@@ -21,7 +21,11 @@ gpgcheck=0
 metadata_expire=60
 EOF
 
-dnf install centminmod-nginx
+# EL8 only: disable nginx module stream to avoid conflicts
+dnf module disable -y nginx
+
+# Install nginx + all modules
+dnf install -y centminmod-nginx nginx-module-*
 ```
 
 ## Overview
@@ -88,6 +92,30 @@ All 26 modules are built as separate RPM packages (`nginx-module-{name}`):
 | **vts** | Virtual host traffic status |
 | **xslt** | XML/XSLT transformation |
 | **zstd** | Zstandard compression (2 .so files) |
+
+## Prerequisites
+
+Most dependencies are resolved automatically by dnf when installing module RPMs. Some modules require system libraries:
+
+| System Package | Required By | Notes |
+|---|---|---|
+| `procps-ng` | centminmod-nginx (base) | Explicit RPM dependency |
+| `brotli` | nginx-module-brotli | Auto-resolved by dnf |
+| `libmaxminddb` | nginx-module-geoip2 | Auto-resolved by dnf |
+| `gd` | nginx-module-image-filter | Auto-resolved by dnf |
+| `libxslt` | nginx-module-xslt, nginx-module-dav-ext | Auto-resolved by dnf |
+| `libxml2` | nginx-module-xslt, nginx-module-dav-ext | Auto-resolved by dnf |
+| `libzstd` | nginx-module-zstd | Auto-resolved by dnf |
+
+On minimal installs, pre-install all prerequisites:
+
+```bash
+dnf install -y procps-ng brotli libmaxminddb gd libxslt libxml2 libzstd
+```
+
+**EL8 only:** Run `dnf module disable -y nginx` before installing to avoid modular filtering conflicts.
+
+**Module dependencies:** `nginx-module-lua`, `nginx-module-set-misc`, and `nginx-module-encrypted-session` require `nginx-module-ndk` — resolved automatically by dnf.
 
 ## Package Details
 
