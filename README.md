@@ -34,7 +34,7 @@ This is a fork of [nginx/pkg-oss](https://github.com/nginx/pkg-oss) (the officia
 
 - **Custom crypto libraries**: System OpenSSL, [AWS-LC](https://github.com/aws/aws-lc), or custom OpenSSL (from source)
 - **26 dynamic modules** as separate RPM packages
-- **GCC toolsets**: GCC 14 (EL8), GCC 15 (EL9), system GCC 14 (EL10)
+- **GCC toolsets**: GCC 14 (EL8), GCC 15 (EL9, EL10)
 - **Compiler optimizations**: `-O3`, `-fstack-protector-strong`, `-fstack-clash-protection`
 - **Optional LTO**: Link-Time Optimization via `-flto=auto`
 - **Optional mold linker**: Faster linking via `-fuse-ld=mold`

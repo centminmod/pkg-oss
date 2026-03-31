@@ -348,7 +348,7 @@ jobs:
               case "$EL_VERSION" in
                 8) EXPECTED_GCC="14" ;;
                 9) EXPECTED_GCC="15" ;;
-                10) EXPECTED_GCC="14" ;;
+                10) EXPECTED_GCC="15" ;;
               esac
               if echo "$GCC_USED" | grep -q "gcc ${EXPECTED_GCC}\."; then
                 echo "PASS: GCC major version matches expected ($EXPECTED_GCC) for EL${EL_VERSION}"
