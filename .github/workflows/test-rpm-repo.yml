@@ -40,7 +40,7 @@ jobs:
   # ── Test each variant × EL version ────────────────────────
   test-variant:
     needs: prepare
-    runs-on: ${{ matrix.variant == 'optimized-v4' && 'ubicloud-standard-8' || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.variant == 'optimized-v4' && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}

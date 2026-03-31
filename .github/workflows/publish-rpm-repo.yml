@@ -676,7 +676,7 @@ jobs:
   test-install:
     name: Test dnf install from R2 (EL${{ inputs.el_version }})
     needs: publish
-    runs-on: ${{ inputs.variant == 'optimized-v4' && 'ubicloud-standard-8' || 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.variant == 'optimized-v4' && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
     steps:
       - name: Test repo install in Docker
         run: |
