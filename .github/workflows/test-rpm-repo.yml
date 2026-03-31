@@ -6,7 +6,7 @@ on:
       variants:
         description: 'Comma-separated variants to test'
         required: false
-        default: 'stable,awslc,openssl,optimized,optimized-v4'
+        default: 'stable,awslc,openssl,optimized,optimized-v4,awslc-optimized,awslc-optimized-v4'
         type: string
       el_versions:
         description: 'Comma-separated EL versions to test'
@@ -24,7 +24,7 @@ jobs:
       - name: Build matrix JSON
         id: matrix
         run: |
-          VARIANTS='${{ inputs.variants || 'stable,awslc,openssl,optimized,optimized-v4' }}'
+          VARIANTS='${{ inputs.variants || 'stable,awslc,openssl,optimized,optimized-v4,awslc-optimized,awslc-optimized-v4' }}'
           EL_VERSIONS='${{ inputs.el_versions || '9' }}'
 
           # Convert CSV to JSON arrays
@@ -40,7 +40,7 @@ jobs:
   # ── Test each variant × EL version ────────────────────────
   test-variant:
     needs: prepare
-    runs-on: ${{ matrix.variant == 'optimized-v4' && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
+    runs-on: ${{ (matrix.variant == 'optimized-v4' || matrix.variant == 'awslc-optimized-v4') && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
@@ -51,7 +51,8 @@ jobs:
         run: |
           # Derive package name from variant
           case "${{ matrix.variant }}" in
-            awslc)   PKG_NAME="centminmod-nginx-awslc" ;;
+            awslc|awslc-optimized|awslc-optimized-v4)
+                     PKG_NAME="centminmod-nginx-awslc" ;;
             openssl) PKG_NAME="centminmod-nginx-openssl" ;;
             *)       PKG_NAME="centminmod-nginx" ;;
           esac

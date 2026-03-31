@@ -819,5 +819,5 @@ jobs:
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nginx-rpms-el${{ matrix.el_version }}-optimized${{ inputs.march == 'x86-64-v4' && '-v4' || '' }}
+          name: nginx-rpms-el${{ matrix.el_version }}-${{ inputs.crypto != 'system' && format('{0}-', inputs.crypto) || '' }}optimized${{ inputs.march == 'x86-64-v4' && '-v4' || '' }}
           path: output/*.rpm
