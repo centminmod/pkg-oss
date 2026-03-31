@@ -101,7 +101,11 @@ BuildRequires: mold
 %else
 %define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-D_FORTIFY_SOURCE=2 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
 %endif
+%if 0%{?rhel} >= 10
+%define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -Wl,-Bsymbolic-functions
+%else
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -pie -Wl,--as-needed -Wl,-Bsymbolic-functions
+%endif
 
 # LTO support — -flto=auto on both compile and link lines (GCC requirement)
 %if "%{opt_lto}" == "y"
