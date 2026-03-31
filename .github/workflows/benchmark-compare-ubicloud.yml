@@ -29,7 +29,7 @@ on:
 jobs:
   benchmark:
     name: "Benchmark EL${{ inputs.el_version || '9' }}"
-    runs-on: ubicloud-standard-8
+    runs-on: ubicloud-standard-16
     steps:
       - name: Runner environment
         run: |
