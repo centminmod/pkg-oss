@@ -230,7 +230,7 @@ The publish workflow:
 |------------|-----------|-------------|-------------|
 | EL8 | 8.5 | gcc-toolset-14 | 14.2.1 |
 | EL9 | 11.x | gcc-toolset-15 | 15.1.1 |
-| EL10 | 14.x | System (no toolset) | 14.x |
+| EL10 | 14.x | gcc-toolset-15 | 15.1.1 |
 
 ### Compiler Flags
 
