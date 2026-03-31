@@ -15,6 +15,8 @@ on:
           - openssl
           - optimized
           - optimized-v4
+          - awslc-optimized
+          - awslc-optimized-v4
           - bolt
       el_version:
         description: 'EL version'
@@ -137,6 +139,12 @@ jobs:
             optimized-v4)
               ARTIFACT_NAME="nginx-rpms-el${EL_VERSION}-optimized-v4"
               ;;
+            awslc-optimized)
+              ARTIFACT_NAME="nginx-rpms-el${EL_VERSION}-awslc-optimized"
+              ;;
+            awslc-optimized-v4)
+              ARTIFACT_NAME="nginx-rpms-el${EL_VERSION}-awslc-optimized-v4"
+              ;;
             bolt)
               ARTIFACT_NAME="nginx-rpms-el9-bolt"
               ;;
@@ -209,7 +217,7 @@ jobs:
                 fi
                 echo "PASS: Base RPM matches stable variant"
                 ;;
-              awslc)
+              awslc|awslc-optimized|awslc-optimized-v4)
                 if ! echo "$BASE_RPM_NAME" | grep -q "nginx-awslc-"; then
                   echo "ERROR: Expected awslc base RPM but got: $BASE_RPM_NAME"
                   exit 1
@@ -552,6 +560,8 @@ jobs:
           <tr><td><strong>openssl</strong></td><td>Custom OpenSSL built from source</td></tr>
           <tr><td><strong>optimized</strong></td><td>LTO + x86-64-v3 + mold linker (Haswell 2013+)</td></tr>
           <tr><td><strong>optimized-v4</strong></td><td>LTO + x86-64-v4 + mold linker (Skylake-X / Zen 4+, AVX-512)</td></tr>
+          <tr><td><strong>awslc-optimized</strong></td><td>AWS-LC + LTO + x86-64-v3 + mold (Haswell 2013+)</td></tr>
+          <tr><td><strong>awslc-optimized-v4</strong></td><td>AWS-LC + LTO + x86-64-v4 + mold (Skylake-X / Zen 4+, AVX-512)</td></tr>
           </table>
           <p>To switch variants, replace <code>stable</code> with the variant name in the baseurl.</p>
 
@@ -743,7 +753,8 @@ jobs:
 
             # Determine base package name for this variant
             case "${VARIANT}" in
-              awslc)   BASE_PKG="centminmod-nginx-awslc" ;;
+              awslc|awslc-optimized|awslc-optimized-v4)
+                       BASE_PKG="centminmod-nginx-awslc" ;;
               openssl) BASE_PKG="centminmod-nginx-openssl" ;;
               *)       BASE_PKG="centminmod-nginx" ;;
             esac
