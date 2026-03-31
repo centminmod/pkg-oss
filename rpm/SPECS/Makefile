@@ -109,11 +109,9 @@ if [ ! -f "$${AWSLC_PREFIX}/include/openssl/ssl.h" ]; then
   mkdir -p "$${AWSLC_PREFIX}"
   cd %{_builddir}
   mkdir -p awslc-module-build && cd awslc-module-build
-  %if 0%{?rhel} == 8
-  cmake3 \
-  %else
-  cmake \
-  %endif
+  CMAKE_CMD=cmake
+  if command -v cmake3 >/dev/null 2>&1; then CMAKE_CMD=cmake3; fi
+  $${CMAKE_CMD} \
     -GNinja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE \
