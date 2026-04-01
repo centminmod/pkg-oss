@@ -256,12 +256,7 @@ jobs:
           fi
 
           echo ""
-          # awslc variants: njs module rebuild fails on EL9/EL10 with awslc crypto
-          # (njs RPM from base build gets cleaned up by failed module rebuild)
-          case "${VARIANT}" in
-            awslc|awslc-optimized|awslc-optimized-v4) EXPECTED_MODULES=25 ;;
-            *) EXPECTED_MODULES=26 ;;
-          esac
+          EXPECTED_MODULES=26
           if [ "$BASE_COUNT" -lt 1 ]; then
             echo "FAIL: No base RPM found"
             exit 1

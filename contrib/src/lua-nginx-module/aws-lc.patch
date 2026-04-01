@@ -1,0 +1,44 @@
+--- a/src/ngx_http_lua_ssl_export_keying_material.c
++++ b/src/ngx_http_lua_ssl_export_keying_material.c
+@@ -79,8 +79,10 @@
+     const u_char *context, size_t ctxlen, char **err)
+ {
+
+-#if defined(OPENSSL_IS_BORINGSSL) || OPENSSL_VERSION_NUMBER < 0x10101000L
+-    *err = "BoringSSL does not support SSL_export_keying_material";
++#if defined(OPENSSL_IS_BORINGSSL) || defined(OPENSSL_IS_AWSLC) \
++    || OPENSSL_VERSION_NUMBER < 0x10101000L
++    *err = "SSL_export_keying_material_early is not supported"
++           " by this SSL library";
+     return NGX_ERROR;
+ #elif defined(LIBRESSL_VERSION_NUMBER)
+     *err = "LibreSSL does not support SSL_export_keying_material";
+--- a/src/ngx_http_lua_ssl_certby.c
++++ b/src/ngx_http_lua_ssl_certby.c
+@@ -859,7 +859,7 @@
+     int                            type;
+     int                            n;
+
+-#ifdef OPENSSL_IS_BORINGSSL
++#if defined(OPENSSL_IS_BORINGSSL) || defined(OPENSSL_IS_AWSLC)
+     size_t                         i;
+ #else
+     int                            i;
+@@ -1431,7 +1431,7 @@
+     STACK_OF(X509)                *chain;
+     ngx_ssl_conn_t                *ssl_conn;
+
+-#ifdef OPENSSL_IS_BORINGSSL
++#if defined(OPENSSL_IS_BORINGSSL) || defined(OPENSSL_IS_AWSLC)
+     size_t                         i;
+ #else
+     int                            i;
+@@ -1573,7 +1573,7 @@
+     X509                          *x509 = NULL;
+     ngx_ssl_conn_t                *ssl_conn;
+
+-#ifdef OPENSSL_IS_BORINGSSL
++#if defined(OPENSSL_IS_BORINGSSL) || defined(OPENSSL_IS_AWSLC)
+     size_t                         i;
+ #else
+     int                            i;
