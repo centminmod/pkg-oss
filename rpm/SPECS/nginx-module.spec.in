@@ -208,6 +208,12 @@ fi
 %if 0%{?rhel} == 9
 . /opt/rh/gcc-toolset-15/enable
 %endif
+# Unset rpmbuild CFLAGS/LDFLAGS — their -specs= annotations reference the
+# system GCC's annobin plugin which is ABI-incompatible with gcc-toolset.
+# Our --with-cc-opt and --with-ld-opt provide all needed hardening flags.
+%if 0%{?rhel} == 8 || 0%{?rhel} == 9
+unset CFLAGS CXXFLAGS LDFLAGS
+%endif
 echo "GCC version: $(gcc --version | head -1)"
 %%CRYPTO_MODULE_PREBUILD%%
 %%MODULE_PREBUILD%%
