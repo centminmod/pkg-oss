@@ -120,7 +120,8 @@ jobs:
               ALL_MODULES="accesskey brotli cache-purge dav-ext echo encrypted-session fancyindex geoip2 headers-more http-concat http-rdns http-redis image-filter length-hiding lua memc ndk njs redis2 set-misc srcache subs-filter testcookie vts xslt zstd"
               MODULES="${MODULES:-$ALL_MODULES}"
               # headers-more is a hard Requires of the base RPM — always build it
-              echo "$MODULES" | grep -qw headers-more || MODULES="headers-more $MODULES"              echo "Building modules: $MODULES"
+              echo "$MODULES" | grep -qw headers-more || MODULES="headers-more $MODULES"
+              echo "Building modules: $MODULES"
               for mod in $MODULES; do
                 echo ""; echo "===> Building module: ${mod}"
                 MOD_START=$(date +%s)
