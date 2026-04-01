@@ -60,9 +60,8 @@ sed -i.bak 's,-lquickjs ,-lquickjs -latomic ,g' auto/quickjs \&\& \
 make $$_make_opts njs \&\& \
 mv build build-cli || true
 cp %{bdir}/njs-$(NJS_VERSION)/build-cli/njs %{bdir}/njs-cli-binary 2>/dev/null || { \
-    echo "WARNING: njs CLI binary not available, creating stub" ; \
-    printf '#!/bin/sh\necho "njs CLI not available with this crypto library" >\&2\nexit 1\n' > %{bdir}/njs-cli-binary ; \
-    chmod +x %{bdir}/njs-cli-binary ; \
+    echo "WARNING: njs CLI binary not available, installing /bin/false as stub" ; \
+    cp /bin/false %{bdir}/njs-cli-binary ; \
 }
 endef
 export MODULE_PREBUILD_njs
