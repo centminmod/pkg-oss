@@ -153,6 +153,8 @@ jobs:
               MODULES="${MODULES:-$ALL_MODULES}"
               # headers-more is a hard Requires of the base RPM — always build it
               echo "$MODULES" | grep -qw headers-more || MODULES="headers-more $MODULES"
+              # ndk is required by lua, encrypted-session, set-misc — auto-include if any are present
+              echo "$MODULES" | grep -qwE 'lua|encrypted-session|set-misc' && { echo "$MODULES" | grep -qw ndk || MODULES="ndk $MODULES"; }
               echo "Building modules: $MODULES"
               for mod in $MODULES; do
                 echo ""; echo "===> Building module: ${mod}"
