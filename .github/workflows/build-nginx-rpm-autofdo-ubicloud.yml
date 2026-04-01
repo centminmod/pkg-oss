@@ -1,5 +1,5 @@
 name: Build Centmin Mod Nginx RPM (AutoFDO) - Ubicloud
-run-name: "AutoFDO Ubicloud RPM: el9 crypto=${{ inputs.crypto }} lto=${{ inputs.lto }}"
+run-name: "AutoFDO Ubicloud RPM: el9 crypto=${{ inputs.crypto }} lto=${{ inputs.lto }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}"
 
 # Phase 5B: AutoFDO proof-of-concept workflow (EL9 only)
 #
@@ -54,6 +54,11 @@ on:
           - '15'
           - '30'
           - '60'
+      modules:
+        description: 'Module list (blank=all 26, or space-separated: "njs lua brotli")'
+        required: false
+        default: ''
+        type: string
 
 env:
   TOOLS_IMAGE: ghcr.io/${{ github.repository }}/profiling-tools-el9:latest

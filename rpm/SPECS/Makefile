@@ -96,6 +96,37 @@ else
 fi
 endef
 export CRYPTO_MODULE_PREBUILD
+else ifeq ($(CRYPTO),awslc)
+CRYPTO_MODULE_SOURCES=	Source51: aws-lc-$(AWSLC_VERSION).tar.gz
+CRYPTO_MODULE_PREP=	tar -C %{_builddir} -xzf %{SOURCE51}
+# Pre-build AWS-LC once to /tmp/awslc-prebuilt, skip on subsequent modules
+# Sentinel: check if ssl.h exists; all 26 modules share /tmp in the same docker run
+define CRYPTO_MODULE_PREBUILD
+AWSLC_PREFIX=/tmp/awslc-prebuilt
+if [ ! -f "$${AWSLC_PREFIX}/include/openssl/ssl.h" ]; then
+  echo "=== Building AWS-LC $(AWSLC_VERSION) to $${AWSLC_PREFIX} (first module) ==="
+  unset CFLAGS CXXFLAGS LDFLAGS
+  mkdir -p "$${AWSLC_PREFIX}"
+  cd %{_builddir}
+  mkdir -p awslc-module-build \&\& cd awslc-module-build
+  CMAKE_CMD=cmake
+  if command -v cmake3 >/dev/null 2>\&1; then CMAKE_CMD=cmake3; fi
+  $${CMAKE_CMD} \
+    -GNinja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DBUILD_TESTING=OFF \
+    -DCMAKE_INSTALL_PREFIX=$${AWSLC_PREFIX} \
+    ../aws-lc-$(AWSLC_VERSION)
+  ninja-build -j$$(nproc)
+  ninja-build install
+  echo "=== AWS-LC pre-build complete ==="
+else
+  echo "=== Reusing pre-built AWS-LC at $${AWSLC_PREFIX} ==="
+fi
+endef
+export CRYPTO_MODULE_PREBUILD
 else
 CRYPTO_MODULE_SOURCES=
 CRYPTO_MODULE_PREP=

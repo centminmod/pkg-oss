@@ -1,5 +1,5 @@
 name: Build Centmin Mod Nginx RPM - Ubicloud
-run-name: "Build Ubicloud RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }}"
+run-name: "Build Ubicloud RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}"
 
 on:
   workflow_dispatch:
@@ -32,6 +32,11 @@ on:
         options:
           - cloudflare
           - system
+      modules:
+        description: 'Module list (blank=all 26, or space-separated: "njs lua brotli")'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   build:
@@ -86,6 +91,7 @@ jobs:
           docker run --rm \
             -e CRYPTO=${{ inputs.crypto || 'system' }} \
             -e ZLIB=${{ inputs.zlib || 'system' }} \
+            -e MODULES="${{ inputs.modules || '' }}" \
             -v ${{ github.workspace }}/output:/output \
             rpmbuild:el${{ matrix.el_version }} bash -c '
               set +e
@@ -111,10 +117,16 @@ jobs:
               mkdir -p /tmp/module-logs
               PASS=0; FAIL=0; FAILED=""
               BUILD_START=$(date +%s)
-              for mod in accesskey brotli cache-purge dav-ext echo encrypted-session \
-                fancyindex geoip2 headers-more http-concat http-rdns http-redis \
-                image-filter length-hiding lua memc ndk njs redis2 set-misc srcache \
-                subs-filter testcookie vts xslt zstd; do
+              ALL_MODULES="accesskey brotli cache-purge dav-ext echo encrypted-session fancyindex geoip2 headers-more http-concat http-rdns http-redis image-filter length-hiding lua memc ndk njs redis2 set-misc srcache subs-filter testcookie vts xslt zstd"
+              MODULES="${MODULES:-$ALL_MODULES}"
+              # headers-more is a hard Requires of the base RPM — always build it
+              echo "$MODULES" | grep -qw headers-more || MODULES="headers-more $MODULES"
+              # ndk is required by lua, encrypted-session, set-misc — auto-include if any are present
+              if echo "$MODULES" | grep -qw lua || echo "$MODULES" | grep -qw encrypted-session || echo "$MODULES" | grep -qw set-misc; then
+                echo "$MODULES" | grep -qw ndk || MODULES="ndk $MODULES"
+              fi
+              echo "Building modules: $MODULES"
+              for mod in $MODULES; do
                 echo ""; echo "===> Building module: ${mod}"
                 MOD_START=$(date +%s)
                 LOG="/tmp/module-logs/${mod}.log"

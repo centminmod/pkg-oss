@@ -256,12 +256,7 @@ jobs:
           fi
 
           echo ""
-          # awslc variants: njs module rebuild fails on EL9/EL10 with awslc crypto
-          # (njs RPM from base build gets cleaned up by failed module rebuild)
-          case "${VARIANT}" in
-            awslc|awslc-optimized|awslc-optimized-v4) EXPECTED_MODULES=25 ;;
-            *) EXPECTED_MODULES=26 ;;
-          esac
+          EXPECTED_MODULES=26
           if [ "$BASE_COUNT" -lt 1 ]; then
             echo "FAIL: No base RPM found"
             exit 1
@@ -358,6 +353,33 @@ jobs:
           echo "GPG signing is Phase 8B — skipping for now"
           echo "Future: gpg --batch --yes --detach-sign --armor repo/${REPO_PATH}/repodata/repomd.xml"
 
+      - name: 'Upload Phase 0: CDN prefix purge (pre-upload)'
+        run: |
+          echo "=== Upload Phase 0: CDN prefix purge (pre-upload) ==="
+          echo "Purging prefix: ${CUSTOM_DOMAIN}/${REPO_PATH}"
+          echo "This clears any cached 404s from prior bucket cleanup"
+
+          PURGE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data "{\"prefixes\":[\"${CUSTOM_DOMAIN}/${REPO_PATH}\"]}")
+
+          HTTP_CODE=$(echo "$PURGE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          BODY=$(echo "$PURGE_RESPONSE" | grep -v "HTTP_CODE:")
+          echo ""
+          echo "Purge HTTP code: $HTTP_CODE"
+          echo "Purge response: $BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "WARNING: CDN prefix purge returned HTTP $HTTP_CODE (non-fatal)"
+          else
+            echo "DONE: CDN prefix cache purged for ${CUSTOM_DOMAIN}/${REPO_PATH}"
+          fi
+
+          echo "Waiting 30s for purge propagation..."
+          sleep 30
+
       - name: 'Upload Phase 1: RPM files'
         run: |
           echo "=== Upload Phase 1: RPM files ==="
@@ -407,20 +429,17 @@ jobs:
             --cache-control "public, max-age=30"
           echo "DONE: Entry point updated"
 
-      - name: 'Upload Phase 4: CDN cache purge'
+      - name: 'Upload Phase 4: CDN prefix purge (post-upload)'
         run: |
-          echo "=== Upload Phase 4: CDN cache purge ==="
-          REPOMD_URL="https://${CUSTOM_DOMAIN}/${REPO_PATH}/repodata/repomd.xml"
-          REPOMD_ASC_URL="https://${CUSTOM_DOMAIN}/${REPO_PATH}/repodata/repomd.xml.asc"
-          echo "Purging:"
-          echo "  $REPOMD_URL"
-          echo "  $REPOMD_ASC_URL"
+          echo "=== Upload Phase 4: CDN prefix purge (post-upload) ==="
+          echo "Purging prefix: ${CUSTOM_DOMAIN}/${REPO_PATH}"
+          echo "This ensures clients get freshly uploaded RPMs and metadata"
 
           PURGE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
             "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
             -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            --data "{\"files\":[\"${REPOMD_URL}\",\"${REPOMD_ASC_URL}\"]}")
+            --data "{\"prefixes\":[\"${CUSTOM_DOMAIN}/${REPO_PATH}\"]}")
 
           HTTP_CODE=$(echo "$PURGE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
           BODY=$(echo "$PURGE_RESPONSE" | grep -v "HTTP_CODE:")
@@ -429,9 +448,9 @@ jobs:
           echo "Purge response: $BODY"
 
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "WARNING: CDN cache purge returned HTTP $HTTP_CODE (non-fatal)"
+            echo "WARNING: CDN prefix purge returned HTTP $HTTP_CODE (non-fatal)"
           else
-            echo "DONE: CDN cache purged"
+            echo "DONE: CDN prefix cache purged for ${CUSTOM_DOMAIN}/${REPO_PATH}"
           fi
 
       - name: Generate and upload index.html
