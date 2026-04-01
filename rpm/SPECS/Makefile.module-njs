@@ -50,6 +50,19 @@ cd %{bdir}/quickjs-$(QUICKJS_GITHASH) \&\& \
 CFLAGS="%{WITH_CC_OPT} -fPIC" make $$_make_opts libquickjs.a
 %define __with_quickjs --with-quickjs
 %endif
+echo "=== QuickJS diagnostic ==="
+ls -la %{bdir}/quickjs-$(QUICKJS_GITHASH)/libquickjs* 2>/dev/null || echo "NO libquickjs files"
+echo "CC=$$(which cc) CFLAGS=$${CFLAGS:-unset} LD_LIBRARY_PATH=$${LD_LIBRARY_PATH:-unset}"
+echo 'int main(){return 0;}' > /tmp/qjs-test.c
+echo "--- Link test 1: basic ---"
+cc -o /tmp/qjs-test /tmp/qjs-test.c -L%{bdir}/quickjs-$(QUICKJS_GITHASH)/ -lquickjs -latomic -lm -ldl -lpthread 2>\&1 || echo "LINK TEST 1 FAILED"
+echo "--- Link test 2: with ld-opt ---"
+cc -o /tmp/qjs-test /tmp/qjs-test.c -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -Wl,-Bsymbolic-functions -L%{bdir}/quickjs-$(QUICKJS_GITHASH)/ -lquickjs -latomic -lm -ldl -lpthread 2>\&1 || echo "LINK TEST 2 FAILED"
+echo "--- Link test 3: without -Bsymbolic-functions ---"
+cc -o /tmp/qjs-test /tmp/qjs-test.c -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -L%{bdir}/quickjs-$(QUICKJS_GITHASH)/ -lquickjs -latomic -lm -ldl -lpthread 2>\&1 || echo "LINK TEST 3 FAILED"
+echo "--- Link test 4: with cc-opt ---"
+cc %{WITH_CC_OPT} -I%{bdir}/quickjs-$(QUICKJS_GITHASH)/ -o /tmp/qjs-test /tmp/qjs-test.c -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -Wl,-Bsymbolic-functions -L%{bdir}/quickjs-$(QUICKJS_GITHASH)/ -lquickjs -latomic -lm -ldl -lpthread 2>\&1 || echo "LINK TEST 4 FAILED"
+echo "=== End QuickJS diagnostic ==="
 cd %{bdir}/njs-$(NJS_VERSION) \&\& \
 sed -i.bak 's,-lquickjs.lto ,-lquickjs.lto -latomic ,g' auto/quickjs \&\& \
 sed -i.bak 's,-lquickjs ,-lquickjs -latomic ,g' auto/quickjs \&\& \
