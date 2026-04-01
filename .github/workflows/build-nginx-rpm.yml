@@ -175,6 +175,13 @@ jobs:
               echo "  Total:  $((PASS+FAIL)) modules in $((BUILD_END-BUILD_START))s"
               [ -n "$FAILED" ] && echo "  Failed:${FAILED}"
               echo "=========================================="
+              # Dump full njs log for debugging QuickJS detection issues
+              if [ -f /tmp/module-logs/njs.log ]; then
+                echo ""
+                echo "::group::Full njs module build log (for QuickJS debugging)"
+                cat /tmp/module-logs/njs.log
+                echo "::endgroup::"
+              fi
               find ../RPMS ../SRPMS -name "*.rpm" -exec cp -v {} /output/ \;
             '
 
