@@ -9,7 +9,7 @@ RUN dnf -y groupinstall 'Development Tools' && \
     libxml2-devel libxslt-devel \
     gcc-toolset-15-gcc gcc-toolset-15-gcc-c++ \
     cmake ninja-build golang perl-core \
-    brotli-devel libmaxminddb-devel gd-devel libedit-devel libatomic \
+    brotli-devel libmaxminddb-devel gd-devel libedit-devel libatomic gcc-toolset-15-libatomic-devel \
     libzstd-devel perl-devel perl-ExtUtils-Embed perl-macros which && \
     dnf clean all
 
