@@ -28,6 +28,7 @@ MODULE_PATCHES_lua=	$(CONTRIB)/src/luajit2/Makefile.patch \
 			$(CONTRIB)/src/lua-nginx-module/config.patch \
 			$(CONTRIB)/src/lua-nginx-module/aws-lc.patch \
 			$(CONTRIB)/src/stream-lua-nginx-module/config.patch \
+			$(CONTRIB)/src/stream-lua-nginx-module/aws-lc.patch \
 			$(CONTRIB)/src/stream-lua-nginx-module/proxy-ssl-verifyby.patch
 
 MODULE_CONFARGS_lua=	--add-dynamic-module=ngx_devel_kit-$(NGX_DEVEL_KIT_VERSION) \
