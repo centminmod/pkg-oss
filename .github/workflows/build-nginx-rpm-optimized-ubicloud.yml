@@ -1,5 +1,5 @@
 name: Build Centmin Mod Nginx RPM (Optimized) - Ubicloud
-run-name: "Optimized Ubicloud RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }} lto=${{ inputs.lto }} march=${{ inputs.march }} linker=${{ inputs.linker }}"
+run-name: "Optimized Ubicloud RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }} lto=${{ inputs.lto }} march=${{ inputs.march }} linker=${{ inputs.linker }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}"
 
 on:
   workflow_dispatch:
@@ -58,6 +58,11 @@ on:
         options:
           - default
           - mold
+      modules:
+        description: 'Module list (blank=all 26, or space-separated: "njs lua brotli")'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   build:
@@ -115,6 +120,7 @@ jobs:
             -e LTO=${{ inputs.lto || 'n' }} \
             -e MARCH=${{ inputs.march || 'generic' }} \
             -e LINKER=${{ inputs.linker || 'default' }} \
+            -e MODULES="${{ inputs.modules || '' }}" \
             -v ${{ github.workspace }}/output:/output \
             rpmbuild:el${{ matrix.el_version }} bash -c '
               set +e
@@ -143,10 +149,10 @@ jobs:
               mkdir -p /tmp/module-logs
               PASS=0; FAIL=0; FAILED=""
               BUILD_START=$(date +%s)
-              for mod in accesskey brotli cache-purge dav-ext echo encrypted-session \
-                fancyindex geoip2 headers-more http-concat http-rdns http-redis \
-                image-filter length-hiding lua memc ndk njs redis2 set-misc srcache \
-                subs-filter testcookie vts xslt zstd; do
+              ALL_MODULES="accesskey brotli cache-purge dav-ext echo encrypted-session fancyindex geoip2 headers-more http-concat http-rdns http-redis image-filter length-hiding lua memc ndk njs redis2 set-misc srcache subs-filter testcookie vts xslt zstd"
+              MODULES="${MODULES:-$ALL_MODULES}"
+              echo "Building modules: $MODULES"
+              for mod in $MODULES; do
                 echo ""; echo "===> Building module: ${mod}"
                 MOD_START=$(date +%s)
                 LOG="/tmp/module-logs/${mod}.log"
