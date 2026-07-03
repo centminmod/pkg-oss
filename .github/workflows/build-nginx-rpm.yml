@@ -1,5 +1,5 @@
 name: Build Centmin Mod Nginx RPM
-run-name: "Build RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}"
+run-name: "Build RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}${{ inputs.runner == 'ubicloud' && ' [ubicloud]' || '' }}"
 
 on:
   workflow_dispatch:
@@ -37,18 +37,26 @@ on:
         required: false
         default: ''
         type: string
+      runner:
+        description: 'Runner type (ubicloud = ubicloud-standard-16, AVX-512 capable, paid)'
+        required: false
+        default: 'github'
+        type: choice
+        options:
+          - github
+          - ubicloud
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.el_versions }}-${{ inputs.crypto }}-${{ inputs.zlib }}-${{ inputs.modules }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.el_versions }}-${{ inputs.crypto }}-${{ inputs.zlib }}-${{ inputs.modules }}-${{ inputs.runner }}
   cancel-in-progress: true
 
 jobs:
   build:
     name: Build RPM (EL${{ matrix.el_version }}, crypto=${{ inputs.crypto || 'system' }}, zlib=${{ inputs.zlib || 'system' }})
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner == 'ubicloud' && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
     timeout-minutes: 180
     strategy:
       fail-fast: false

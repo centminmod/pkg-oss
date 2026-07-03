@@ -1,5 +1,5 @@
 name: Build Centmin Mod Nginx RPM (AutoFDO)
-run-name: "AutoFDO RPM: el9 crypto=${{ inputs.crypto }} lto=${{ inputs.lto }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}"
+run-name: "AutoFDO RPM: el9 crypto=${{ inputs.crypto }} lto=${{ inputs.lto }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}${{ inputs.runner == 'ubicloud' && ' [ubicloud]' || '' }}"
 
 # Phase 5B: AutoFDO proof-of-concept workflow (EL9 only)
 #
@@ -59,12 +59,20 @@ on:
         required: false
         default: ''
         type: string
+      runner:
+        description: 'Runner type (ubicloud = ubicloud-standard-16, AVX-512 capable, paid)'
+        required: false
+        default: 'github'
+        type: choice
+        options:
+          - github
+          - ubicloud
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.crypto }}-${{ inputs.zlib }}-${{ inputs.lto }}-${{ inputs.profile_duration }}-${{ inputs.modules }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.crypto }}-${{ inputs.zlib }}-${{ inputs.lto }}-${{ inputs.profile_duration }}-${{ inputs.modules }}-${{ inputs.runner }}
   cancel-in-progress: true
 
 env:
@@ -76,7 +84,7 @@ jobs:
   # ============================================================
   build-baseline:
     name: Build baseline RPM
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner == 'ubicloud' && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
     timeout-minutes: 240
     steps:
       - name: Checkout repository
@@ -111,7 +119,7 @@ jobs:
   profile-collect:
     name: Collect AutoFDO profile
     needs: build-baseline
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner == 'ubicloud' && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
     timeout-minutes: 240
     steps:
       - name: Download baseline RPMs
@@ -323,7 +331,7 @@ jobs:
   build-autofdo:
     name: Build AutoFDO-optimized RPM
     needs: profile-collect
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner == 'ubicloud' && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
     timeout-minutes: 240
     steps:
       - name: Checkout repository

@@ -1,5 +1,5 @@
 name: Build Centmin Mod Nginx RPM (Optimized)
-run-name: "Optimized RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }} lto=${{ inputs.lto }} march=${{ inputs.march }} linker=${{ inputs.linker }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}"
+run-name: "Optimized RPM: ${{ inputs.el_versions }} crypto=${{ inputs.crypto }} zlib=${{ inputs.zlib }} lto=${{ inputs.lto }} march=${{ inputs.march }} linker=${{ inputs.linker }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}${{ inputs.runner == 'ubicloud' && ' [ubicloud]' || '' }}"
 
 on:
   workflow_dispatch:
@@ -63,18 +63,26 @@ on:
         required: false
         default: ''
         type: string
+      runner:
+        description: 'Runner type (ubicloud = ubicloud-standard-16, AVX-512 capable, paid)'
+        required: false
+        default: 'github'
+        type: choice
+        options:
+          - github
+          - ubicloud
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.el_versions }}-${{ inputs.crypto }}-${{ inputs.zlib }}-${{ inputs.lto }}-${{ inputs.march }}-${{ inputs.linker }}-${{ inputs.modules }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.el_versions }}-${{ inputs.crypto }}-${{ inputs.zlib }}-${{ inputs.lto }}-${{ inputs.march }}-${{ inputs.linker }}-${{ inputs.modules }}-${{ inputs.runner }}
   cancel-in-progress: true
 
 jobs:
   build:
     name: Build RPM (EL${{ matrix.el_version }}, crypto=${{ inputs.crypto || 'system' }}, zlib=${{ inputs.zlib || 'system' }}, lto=${{ inputs.lto || 'n' }}, march=${{ inputs.march || 'generic' }}, linker=${{ inputs.linker || 'default' }})
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner == 'ubicloud' && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
     timeout-minutes: 240
     strategy:
       fail-fast: false

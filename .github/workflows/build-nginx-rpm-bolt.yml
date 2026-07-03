@@ -1,5 +1,5 @@
 name: Build Centmin Mod Nginx RPM (BOLT)
-run-name: "BOLT RPM: el9 crypto=${{ inputs.crypto }} lto=${{ inputs.lto }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}"
+run-name: "BOLT RPM: el9 crypto=${{ inputs.crypto }} lto=${{ inputs.lto }}${{ inputs.modules && format(' modules={0}', inputs.modules) || '' }}${{ inputs.runner == 'ubicloud' && ' [ubicloud]' || '' }}"
 
 # Phase 5C: BOLT (Binary Optimization and Layout Tool) proof-of-concept (EL9 only)
 #
@@ -68,12 +68,20 @@ on:
         required: false
         default: ''
         type: string
+      runner:
+        description: 'Runner type (ubicloud = ubicloud-standard-16, AVX-512 capable, paid)'
+        required: false
+        default: 'github'
+        type: choice
+        options:
+          - github
+          - ubicloud
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.crypto }}-${{ inputs.zlib }}-${{ inputs.lto }}-${{ inputs.profile_duration }}-${{ inputs.modules }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.crypto }}-${{ inputs.zlib }}-${{ inputs.lto }}-${{ inputs.profile_duration }}-${{ inputs.modules }}-${{ inputs.runner }}
   cancel-in-progress: true
 
 env:
@@ -85,7 +93,7 @@ jobs:
   # ============================================================
   build-and-profile:
     name: Build + Profile
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner == 'ubicloud' && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
     timeout-minutes: 240
     steps:
       - name: Checkout repository
@@ -350,7 +358,7 @@ jobs:
   bolt-optimize:
     name: BOLT optimize
     needs: build-and-profile
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner == 'ubicloud' && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
     timeout-minutes: 240
     steps:
       - name: Download BOLT profile + binary
