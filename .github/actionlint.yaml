@@ -1,0 +1,7 @@
+# actionlint configuration
+# https://github.com/rhysd/actionlint/blob/main/docs/config.md
+self-hosted-runner:
+  # Ubicloud managed runners (AVX-512 capable) used by the *-ubicloud and
+  # v4-variant workflows
+  labels:
+    - ubicloud-standard-16
