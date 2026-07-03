@@ -1,0 +1,43 @@
+name: Lint
+
+on:
+  push:
+    paths:
+      - '.github/**'
+  pull_request:
+    paths:
+      - '.github/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: actionlint + shellcheck + yamllint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.7
+          # Inline-shellcheck of run: blocks stays disabled until the Phase-3
+          # extraction of giant run: blocks into .github/scripts/ lands.
+          ./actionlint -color -shellcheck=
+
+      - name: shellcheck (.github/scripts)
+        run: |
+          shellcheck --version | head -2
+          shellcheck .github/scripts/*.sh
+
+      - name: yamllint (workflows)
+        run: |
+          pipx install yamllint
+          yamllint -d "{extends: relaxed, rules: {line-length: disable, trailing-spaces: disable}}" .github/workflows/

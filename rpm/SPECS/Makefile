@@ -253,6 +253,17 @@ list-all-modules: $(addprefix list-module-, $(MODULES))
 
 list-base-modules: $(addprefix list-module-, $(BASE_MODULES))
 
+# Plain space-separated module list — single source of truth consumed by CI
+# workflows (ALL_MODULES / EXPECTED_MODULES). Keep output machine-readable.
+echo-base-modules:
+	@echo $(BASE_MODULES)
+
+# Local pre-flight validation (Docker-based, macOS-safe):
+#   make preflight              lint + spec-gen dry-run + patch sanity
+#   make preflight MODULE=lua   additionally smoke-build one module
+preflight:
+	@bash $(CURDIR)/../../.github/scripts/preflight.sh $(MODULE)
+
 list: list-base list-all-modules
 
 all:	base base-modules
@@ -648,6 +659,6 @@ clean:
 	@rm -f attest-base attest-module-*
 	@find $(SRCPATH)/ -type l -delete
 
-.PHONY:	default list list-base list-all-modules list-base-modules all modules specs test test-debug clean
+.PHONY:	default list list-base list-all-modules list-base-modules echo-base-modules preflight all modules specs test test-debug clean
 
 .SECONDARY:

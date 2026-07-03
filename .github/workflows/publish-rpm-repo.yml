@@ -77,6 +77,7 @@ jobs:
           sparse-checkout: |
             .github/scripts
             rpm/SPECS/centminmod-nginx-release.spec
+            rpm/SPECS/Makefile
 
       - name: Validate required secrets
         run: |
@@ -305,7 +306,8 @@ jobs:
           fi
 
           echo ""
-          EXPECTED_MODULES=26
+          # Single source of truth: BASE_MODULES in rpm/SPECS/Makefile
+          EXPECTED_MODULES=$(sed -n "s/^BASE_MODULES=[[:space:]]*//p" rpm/SPECS/Makefile | wc -w | tr -d " ")
           if [ "$BASE_COUNT" -lt 1 ]; then
             echo "FAIL: No base RPM found"
             exit 1
