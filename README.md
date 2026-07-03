@@ -42,8 +42,9 @@ All RPMs (binary + source) and repository metadata are GPG-signed
 (see [docs/GPG-SIGNING.md](docs/GPG-SIGNING.md)). Public key:
 `https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx`
 
-> **Key fingerprint:** _published here after the first signed release —
-> verify with `gpg --show-keys RPM-GPG-KEY-centminmod-nginx`._
+> **Key fingerprint:** `8D0F 78A1 5F7D 4724 A72B  CF62 6660 EA8E 924F 64A1`
+> (Centmin Mod Nginx RPM Signing &lt;rpm-signing@centminmod.com&gt;, RSA 4096,
+> expires 2028-07-02). Verify with `gpg --show-keys RPM-GPG-KEY-centminmod-nginx`.
 
 Source RPMs are published per variant under `<variant>/el/<version>/SRPMS/`.
 
