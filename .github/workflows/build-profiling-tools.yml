@@ -22,6 +22,10 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.llvm_version }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/profiling-tools-el9
@@ -30,6 +34,7 @@ jobs:
   build-and-push:
     name: Build & push profiling tools
     runs-on: ubuntu-24.04
+    timeout-minutes: 300
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

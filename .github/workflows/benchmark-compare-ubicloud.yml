@@ -26,10 +26,18 @@ on:
         default: '3'
         type: string
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.el_version }}-${{ inputs.h2load_requests }}-${{ inputs.h2load_clients }}-${{ inputs.h2load_streams }}-${{ inputs.runs }}
+  cancel-in-progress: true
+
 jobs:
   benchmark:
     name: "Benchmark EL${{ inputs.el_version || '9' }}"
     runs-on: ubicloud-standard-16
+    timeout-minutes: 120
     steps:
       - name: Runner environment
         run: |
@@ -647,3 +655,4 @@ jobs:
             output/benchmark-chart.html
             output/benchmark-summary.txt
             output/bench-*.txt
+          retention-days: 7

@@ -69,8 +69,15 @@ on:
         default: ''
         type: string
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.crypto }}-${{ inputs.zlib }}-${{ inputs.lto }}-${{ inputs.profile_duration }}-${{ inputs.modules }}
+  cancel-in-progress: true
+
 env:
-  TOOLS_IMAGE: ghcr.io/${{ github.repository }}/profiling-tools-el9:latest
+  TOOLS_IMAGE: ghcr.io/${{ github.repository }}/profiling-tools-el9:llvm-19.1.7
 
 jobs:
   # ============================================================
@@ -79,6 +86,7 @@ jobs:
   build-and-profile:
     name: Build + Profile
     runs-on: ubuntu-24.04
+    timeout-minutes: 240
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -327,6 +335,7 @@ jobs:
           path: |
             profiles/nginx.fdata
             profiles/nginx.original
+          retention-days: 7
 
       - name: Upload baseline RPMs
         uses: actions/upload-artifact@v4
@@ -342,6 +351,7 @@ jobs:
     name: BOLT optimize
     needs: build-and-profile
     runs-on: ubuntu-24.04
+    timeout-minutes: 240
     steps:
       - name: Download BOLT profile + binary
         uses: actions/download-artifact@v4
@@ -529,3 +539,4 @@ jobs:
         with:
           name: nginx-rpms-el9-bolt
           path: output/*
+          retention-days: 7

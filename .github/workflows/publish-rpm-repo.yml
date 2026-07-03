@@ -66,6 +66,7 @@ jobs:
   publish:
     name: Publish ${{ inputs.variant }}/el${{ inputs.el_version }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - name: Record workflow start time
         run: echo "WORKFLOW_START=$(date +%s)" >> $GITHUB_ENV
@@ -506,6 +507,7 @@ jobs:
           baseurl=https://rpm-nginx.centminmod.com/stable/el/\$releasever/\$basearch/
           enabled=1
           gpgcheck=0
+          metadata_expire=6h
           EOF
 
           <span class="cmt"># EL8 only: disable nginx module stream to avoid conflicts</span>
@@ -739,6 +741,7 @@ jobs:
     name: Test dnf install from R2 (EL${{ inputs.el_version }})
     needs: publish
     runs-on: ${{ (inputs.variant == 'optimized-v4' || inputs.variant == 'awslc-optimized-v4') && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
+    timeout-minutes: 60
     steps:
       - name: Test repo install in Docker
         run: |

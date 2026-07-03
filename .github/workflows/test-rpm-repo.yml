@@ -14,10 +14,18 @@ on:
         default: '9'
         type: string
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.variants }}-${{ inputs.el_versions }}
+  cancel-in-progress: true
+
 jobs:
   # ── Build matrix from inputs ──────────────────────────────
   prepare:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -41,6 +49,7 @@ jobs:
   test-variant:
     needs: prepare
     runs-on: ${{ (matrix.variant == 'optimized-v4' || matrix.variant == 'awslc-optimized-v4') && 'ubicloud-standard-16' || 'ubuntu-24.04' }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}

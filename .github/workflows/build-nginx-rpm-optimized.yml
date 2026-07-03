@@ -64,10 +64,18 @@ on:
         default: ''
         type: string
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.el_versions }}-${{ inputs.crypto }}-${{ inputs.zlib }}-${{ inputs.lto }}-${{ inputs.march }}-${{ inputs.linker }}-${{ inputs.modules }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build RPM (EL${{ matrix.el_version }}, crypto=${{ inputs.crypto || 'system' }}, zlib=${{ inputs.zlib || 'system' }}, lto=${{ inputs.lto || 'n' }}, march=${{ inputs.march || 'generic' }}, linker=${{ inputs.linker || 'default' }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
@@ -833,3 +841,4 @@ jobs:
         with:
           name: nginx-rpms-el${{ matrix.el_version }}-${{ inputs.crypto != 'system' && format('{0}-', inputs.crypto) || '' }}optimized${{ inputs.march == 'x86-64-v4' && '-v4' || '' }}
           path: output/*.rpm
+          retention-days: 7
