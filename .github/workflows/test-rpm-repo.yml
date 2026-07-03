@@ -86,13 +86,31 @@ jobs:
           echo "Phase 1: Install from R2 — ${VARIANT}/el${EL}"
           echo "=========================================="
 
+          # Detect whether this repo has been published with GPG signing.
+          # Migration bridge: variants published before the signing pipeline
+          # have no repomd.xml.asc — test those without gpgcheck until republished.
+          CHECK_URL="${REPO_URL/\$basearch/x86_64}"
+          if curl -sfo /dev/null "${CHECK_URL}/repodata/repomd.xml.asc"; then
+            GPGCHECK=1
+            REPO_GPGCHECK=1
+            GPGKEY_LINE="gpgkey=https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx"
+            echo "Repo is GPG-signed — enforcing gpgcheck=1 + repo_gpgcheck=1"
+          else
+            GPGCHECK=0
+            REPO_GPGCHECK=0
+            GPGKEY_LINE=""
+            echo "WARNING: repo not yet signed (no repomd.xml.asc) — gpgcheck disabled for this test"
+          fi
+
           # Create repo file
           cat > /etc/yum.repos.d/centminmod-nginx-test.repo << REPOEOF
           [centminmod-nginx-test]
           name=Centmin Mod Nginx Test - EL${EL}
           baseurl=${REPO_URL}
           enabled=1
-          gpgcheck=0
+          gpgcheck=${GPGCHECK}
+          repo_gpgcheck=${REPO_GPGCHECK}
+          ${GPGKEY_LINE}
           metadata_expire=60
           skip_if_unavailable=0
           REPOEOF

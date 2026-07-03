@@ -71,6 +71,13 @@ jobs:
       - name: Record workflow start time
         run: echo "WORKFLOW_START=$(date +%s)" >> $GITHUB_ENV
 
+      - name: Checkout signing scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts
+            rpm/SPECS/centminmod-nginx-release.spec
+
       - name: Validate required secrets
         run: |
           echo "=== Pre-flight secrets validation ==="
@@ -156,6 +163,7 @@ jobs:
           esac
 
           REPO_PATH="${VARIANT}/el/${EL_VERSION}/x86_64"
+          SRPM_PATH="${VARIANT}/el/${EL_VERSION}/SRPMS"
 
           echo ""
           echo "=== Derived values ==="
@@ -168,6 +176,46 @@ jobs:
           echo "EL_VERSION=${EL_VERSION}" >> $GITHUB_ENV
           echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> $GITHUB_ENV
           echo "REPO_PATH=${REPO_PATH}" >> $GITHUB_ENV
+          echo "SRPM_PATH=${SRPM_PATH}" >> $GITHUB_ENV
+
+      - name: Validate source run provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== Validating provenance of run ${{ inputs.run_id }} ==="
+          RUN_JSON=$(gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.run_id }}")
+          RUN_WORKFLOW=$(echo "$RUN_JSON" | jq -r '.path')
+          RUN_BRANCH=$(echo "$RUN_JSON" | jq -r '.head_branch')
+          RUN_SHA=$(echo "$RUN_JSON" | jq -r '.head_sha')
+          RUN_CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion')
+          RUN_EVENT=$(echo "$RUN_JSON" | jq -r '.event')
+
+          echo "  workflow:   $RUN_WORKFLOW"
+          echo "  branch:     $RUN_BRANCH"
+          echo "  commit:     $RUN_SHA"
+          echo "  event:      $RUN_EVENT"
+          echo "  conclusion: $RUN_CONCLUSION"
+
+          FAIL=0
+          case "$RUN_WORKFLOW" in
+            .github/workflows/build-nginx-rpm*.yml)
+              echo "PASS: run comes from a build workflow" ;;
+            *)
+              echo "FAIL: run is not from a build-nginx-rpm* workflow ($RUN_WORKFLOW)"
+              FAIL=1 ;;
+          esac
+          if [ "$RUN_CONCLUSION" != "success" ]; then
+            echo "FAIL: source run conclusion is '$RUN_CONCLUSION' (want success)"
+            FAIL=1
+          fi
+          case "$RUN_BRANCH" in
+            centminmod|master) echo "PASS: run built from $RUN_BRANCH" ;;
+            *) echo "WARNING: run built from non-default branch '$RUN_BRANCH' (allowed, but verify this is intended)" ;;
+          esac
+          if [ "$FAIL" -ne 0 ]; then
+            echo "ERROR: source run provenance validation failed — refusing to publish"
+            exit 1
+          fi
 
       - name: Download RPM artifacts
         env:
@@ -289,6 +337,57 @@ jobs:
           echo ""
           echo "=== Staged count: $STAGED_COUNT RPMs ==="
 
+          # Stage source RPMs (source-distribution/license compliance)
+          mkdir -p "repo/${SRPM_PATH}"
+          if ls downloaded-rpms/*.src.rpm >/dev/null 2>&1; then
+            cp downloaded-rpms/*.src.rpm "repo/${SRPM_PATH}/"
+            echo ""
+            echo "=== Staged SRPMs ==="
+            ls -lhS "repo/${SRPM_PATH}/"
+          else
+            echo ""
+            echo "WARNING: no .src.rpm files in artifact (older build run?) — skipping source publish"
+          fi
+
+      - name: GPG sign RPMs
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          echo "=== GPG sign RPMs (before metadata generation) ==="
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "ERROR: GPG_PRIVATE_KEY secret is not configured — unsigned publishes are not allowed."
+            echo "Generate the signing key per docs/GPG-SIGNING.md and add it with:"
+            echo "  gpg --armor --export-secret-keys <KEYID> | gh secret set GPG_PRIVATE_KEY"
+            exit 1
+          fi
+          mkdir -p keys
+          docker run --rm \
+            -e GPG_PRIVATE_KEY -e GPG_PASSPHRASE \
+            -v "$(pwd)/repo/${REPO_PATH}:/repo" \
+            -v "$(pwd)/repo/${SRPM_PATH}:/srpms" \
+            -v "$(pwd)/keys:/keys" \
+            -v "$(pwd)/.github/scripts:/scripts:ro" \
+            almalinux:9 bash /scripts/sign-rpms.sh
+
+      - name: Build release RPM (stable variant only)
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ "${VARIANT}" != "stable" ]; then
+            echo "SKIP: centminmod-nginx-release is built only on stable publishes"
+            exit 0
+          fi
+          echo "=== Building centminmod-nginx-release RPM ==="
+          docker run --rm \
+            -e GPG_PRIVATE_KEY -e GPG_PASSPHRASE \
+            -v "$(pwd)/keys:/keys" \
+            -v "$(pwd)/repo/${REPO_PATH}:/repo" \
+            -v "$(pwd)/rpm/SPECS:/specs:ro" \
+            -v "$(pwd)/.github/scripts:/scripts:ro" \
+            almalinux:9 bash /scripts/build-release-rpm.sh
+
       - name: Generate repository metadata (createrepo_c)
         run: |
           docker run --rm \
@@ -316,6 +415,25 @@ jobs:
               echo "=== repomd.xml content ==="
               cat /repo/repodata/repomd.xml
             '
+
+          # Source repo metadata (only when SRPMs were staged)
+          if ls "repo/${SRPM_PATH}/"*.src.rpm >/dev/null 2>&1; then
+            echo ""
+            echo "=== Generating SRPMS repository metadata ==="
+            docker run --rm \
+              -v "$(pwd)/repo/${SRPM_PATH}:/repo" \
+              almalinux:9 bash -c '
+                dnf -y -q install createrepo_c >/dev/null
+                createrepo_c \
+                  --compress-type gz \
+                  --checksum sha256 \
+                  --unique-md-filenames \
+                  --workers $(nproc) \
+                  --update \
+                  /repo
+                ls -lh /repo/repodata/
+              '
+          fi
 
       - name: Verify repodata integrity
         run: |
@@ -349,10 +467,21 @@ jobs:
             exit 1
           fi
 
-      - name: GPG signing (Phase 8B — placeholder)
+      - name: GPG sign repository metadata
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          echo "GPG signing is Phase 8B — skipping for now"
-          echo "Future: gpg --batch --yes --detach-sign --armor repo/${REPO_PATH}/repodata/repomd.xml"
+          echo "=== GPG sign repomd.xml ==="
+          SIGN_DIRS="/work/repo/${REPO_PATH}"
+          if [ -f "repo/${SRPM_PATH}/repodata/repomd.xml" ]; then
+            SIGN_DIRS="$SIGN_DIRS /work/repo/${SRPM_PATH}"
+          fi
+          docker run --rm \
+            -e GPG_PRIVATE_KEY -e GPG_PASSPHRASE \
+            -v "$(pwd):/work" \
+            -v "$(pwd)/.github/scripts:/scripts:ro" \
+            almalinux:9 bash /scripts/sign-repomd.sh $SIGN_DIRS
 
       - name: 'Upload Phase 0: CDN prefix purge (pre-upload)'
         run: |
@@ -393,6 +522,17 @@ jobs:
             --no-progress
           echo "DONE: RPM files uploaded"
 
+          if [ -d "repo/${SRPM_PATH}/repodata" ]; then
+            echo "=== Upload Phase 1b: SRPM files ==="
+            aws s3 sync "repo/${SRPM_PATH}/" "s3://${R2_BUCKET}/${SRPM_PATH}/" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --exclude "repodata/*" \
+              --content-type "application/x-rpm" \
+              --cache-control "public, max-age=3600" \
+              --no-progress
+            echo "DONE: SRPM files uploaded"
+          fi
+
       - name: 'Upload Phase 2: Metadata blobs'
         run: |
           echo "=== Upload Phase 2: Metadata blobs ==="
@@ -405,21 +545,33 @@ jobs:
             --no-progress
           echo "DONE: Metadata blobs uploaded"
 
+          if [ -d "repo/${SRPM_PATH}/repodata" ]; then
+            echo "=== Upload Phase 2b: SRPMS metadata blobs ==="
+            aws s3 sync "repo/${SRPM_PATH}/repodata/" "s3://${R2_BUCKET}/${SRPM_PATH}/repodata/" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --exclude "repomd.xml" \
+              --exclude "repomd.xml.asc" \
+              --content-type "application/gzip" \
+              --cache-control "public, max-age=120" \
+              --no-progress
+            echo "DONE: SRPMS metadata blobs uploaded"
+          fi
+
       - name: 'Upload Phase 3: repomd.xml entry point'
         run: |
           echo "=== Upload Phase 3: Entry point files ==="
 
-          # Upload repomd.xml.asc first (if exists — Phase 8B)
-          if [ -f "repo/${REPO_PATH}/repodata/repomd.xml.asc" ]; then
-            echo "Uploading repomd.xml.asc..."
-            aws s3 cp "repo/${REPO_PATH}/repodata/repomd.xml.asc" \
-              "s3://${R2_BUCKET}/${REPO_PATH}/repodata/repomd.xml.asc" \
-              --endpoint-url "${R2_ENDPOINT}" \
-              --content-type "application/pgp-signature" \
-              --cache-control "public, max-age=30"
-          else
-            echo "SKIP: repomd.xml.asc not present (GPG signing is Phase 8B)"
+          # Upload repomd.xml.asc first — signing is mandatory, missing .asc aborts
+          if [ ! -f "repo/${REPO_PATH}/repodata/repomd.xml.asc" ]; then
+            echo "ERROR: repomd.xml.asc missing — metadata was not signed; aborting before entry-point update"
+            exit 1
           fi
+          echo "Uploading repomd.xml.asc..."
+          aws s3 cp "repo/${REPO_PATH}/repodata/repomd.xml.asc" \
+            "s3://${R2_BUCKET}/${REPO_PATH}/repodata/repomd.xml.asc" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "application/pgp-signature" \
+            --cache-control "public, max-age=30"
 
           # Upload repomd.xml LAST — all referenced files are already in place
           echo "Uploading repomd.xml (entry point — LAST)..."
@@ -429,6 +581,38 @@ jobs:
             --content-type "application/xml" \
             --cache-control "public, max-age=30"
           echo "DONE: Entry point updated"
+
+          if [ -f "repo/${SRPM_PATH}/repodata/repomd.xml" ]; then
+            echo "Uploading SRPMS repomd.xml.asc + repomd.xml..."
+            aws s3 cp "repo/${SRPM_PATH}/repodata/repomd.xml.asc" \
+              "s3://${R2_BUCKET}/${SRPM_PATH}/repodata/repomd.xml.asc" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --content-type "application/pgp-signature" \
+              --cache-control "public, max-age=30"
+            aws s3 cp "repo/${SRPM_PATH}/repodata/repomd.xml" \
+              "s3://${R2_BUCKET}/${SRPM_PATH}/repodata/repomd.xml" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --content-type "application/xml" \
+              --cache-control "public, max-age=30"
+          fi
+
+          echo "Uploading GPG public key to bucket root..."
+          aws s3 cp keys/RPM-GPG-KEY-centminmod-nginx \
+            "s3://${R2_BUCKET}/RPM-GPG-KEY-centminmod-nginx" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "text/plain" \
+            --cache-control "public, max-age=3600"
+          echo "DONE: Public key published"
+
+          if [ -f keys/centminmod-nginx-release.noarch.rpm ]; then
+            echo "Uploading release RPM to bucket root..."
+            aws s3 cp keys/centminmod-nginx-release.noarch.rpm \
+              "s3://${R2_BUCKET}/centminmod-nginx-release.noarch.rpm" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --content-type "application/x-rpm" \
+              --cache-control "public, max-age=3600"
+            echo "DONE: Release RPM published"
+          fi
 
       - name: 'Upload Phase 4: CDN prefix purge (post-upload)'
         run: |
@@ -440,7 +624,7 @@ jobs:
             "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
             -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            --data "{\"prefixes\":[\"${CUSTOM_DOMAIN}/${REPO_PATH}\"]}")
+            --data "{\"prefixes\":[\"${CUSTOM_DOMAIN}/${REPO_PATH}\",\"${CUSTOM_DOMAIN}/${SRPM_PATH}\",\"${CUSTOM_DOMAIN}/RPM-GPG-KEY-centminmod-nginx\",\"${CUSTOM_DOMAIN}/centminmod-nginx-release.noarch.rpm\"]}")
 
           HTTP_CODE=$(echo "$PURGE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
           BODY=$(echo "$PURGE_RESPONSE" | grep -v "HTTP_CODE:")
@@ -451,7 +635,7 @@ jobs:
           if [ "$HTTP_CODE" != "200" ]; then
             echo "WARNING: CDN prefix purge returned HTTP $HTTP_CODE (non-fatal)"
           else
-            echo "DONE: CDN prefix cache purged for ${CUSTOM_DOMAIN}/${REPO_PATH}"
+            echo "DONE: CDN prefix cache purged for ${CUSTOM_DOMAIN}/${REPO_PATH} + SRPMS + GPG key"
           fi
 
       - name: Generate and upload index.html
@@ -500,13 +684,18 @@ jobs:
 
           <h2>Getting Started</h2>
           <p>Set up the repository on your server and install Nginx:</p>
-          <pre><span class="cmt"># Step 1 &mdash; Add the repository</span>
+          <pre><span class="cmt"># Step 1 &mdash; Add the repository (installs .repo + GPG signing key)</span>
+          dnf install -y https://rpm-nginx.centminmod.com/centminmod-nginx-release.noarch.rpm
+
+          <span class="cmt"># Alternative &mdash; manual repository configuration:</span>
           cat &gt; /etc/yum.repos.d/centminmod-nginx.repo &lt;&lt; 'EOF'
           [centminmod-nginx]
           name=Centmin Mod Nginx
           baseurl=https://rpm-nginx.centminmod.com/stable/el/\$releasever/\$basearch/
           enabled=1
-          gpgcheck=0
+          gpgcheck=1
+          repo_gpgcheck=1
+          gpgkey=https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx
           metadata_expire=6h
           EOF
 
@@ -763,7 +952,9 @@ jobs:
           name=Centmin Mod Nginx Test - ${VARIANT} - EL${EL_MAJOR}
           baseurl=https://rpm-nginx.centminmod.com/${VARIANT}/el/${EL_MAJOR}/\$basearch/
           enabled=1
-          gpgcheck=0
+          gpgcheck=1
+          repo_gpgcheck=1
+          gpgkey=https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx
           metadata_expire=60
           skip_if_unavailable=0
           REPO

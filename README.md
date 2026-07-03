@@ -11,15 +11,8 @@ Production-grade Nginx RPM packages for **AlmaLinux/Rocky Linux 8, 9, and 10**, 
 ## Quick Install
 
 ```bash
-# AlmaLinux/Rocky Linux 8/9/10
-cat > /etc/yum.repos.d/centminmod-nginx.repo << 'EOF'
-[centminmod-nginx]
-name=Centmin Mod Nginx - EL$releasever - $basearch
-baseurl=https://rpm-nginx.centminmod.com/stable/el/$releasever/$basearch/
-enabled=1
-gpgcheck=0
-metadata_expire=60
-EOF
+# AlmaLinux/Rocky Linux 8/9/10 — installs .repo + GPG signing key
+dnf install -y https://rpm-nginx.centminmod.com/centminmod-nginx-release.noarch.rpm
 
 # EL8 only: disable nginx module stream to avoid conflicts
 dnf module disable -y nginx
@@ -27,6 +20,32 @@ dnf module disable -y nginx
 # Install nginx + all modules
 dnf install -y centminmod-nginx nginx-module-*
 ```
+
+Manual repository configuration (alternative to the release RPM):
+
+```bash
+cat > /etc/yum.repos.d/centminmod-nginx.repo << 'EOF'
+[centminmod-nginx]
+name=Centmin Mod Nginx - EL$releasever - $basearch
+baseurl=https://rpm-nginx.centminmod.com/stable/el/$releasever/$basearch/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx
+metadata_expire=6h
+EOF
+```
+
+## Package signing
+
+All RPMs (binary + source) and repository metadata are GPG-signed
+(see [docs/GPG-SIGNING.md](docs/GPG-SIGNING.md)). Public key:
+`https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx`
+
+> **Key fingerprint:** _published here after the first signed release —
+> verify with `gpg --show-keys RPM-GPG-KEY-centminmod-nginx`._
+
+Source RPMs are published per variant under `<variant>/el/<version>/SRPMS/`.
 
 ## Overview
 
