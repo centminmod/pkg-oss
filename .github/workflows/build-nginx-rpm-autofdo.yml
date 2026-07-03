@@ -88,7 +88,7 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Build Docker image
         run: docker build -f docker/Dockerfile.rpmbuild-el9 -t rpmbuild:el9 .
@@ -107,7 +107,7 @@ jobs:
         run: ls -lh output/
 
       - name: Upload baseline RPMs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: baseline-rpms
           path: output/*.rpm
@@ -123,7 +123,7 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Download baseline RPMs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: baseline-rpms
           path: rpms/
@@ -319,7 +319,7 @@ jobs:
             '
 
       - name: Upload AutoFDO profile
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: autofdo-profile
           path: profiles/nginx.gcov
@@ -335,10 +335,10 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Download AutoFDO profile
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: autofdo-profile
           path: profiles/
@@ -411,7 +411,7 @@ jobs:
             '
 
       - name: Download baseline RPMs for benchmark comparison
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: baseline-rpms
           path: baseline-rpms/
@@ -491,7 +491,7 @@ jobs:
             '
 
       - name: Upload AutoFDO RPM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nginx-rpms-el9-autofdo
           path: output/*.rpm

@@ -56,7 +56,7 @@ jobs:
           free -m | grep "Mem:" | awk '{print $2}' >> output/runner-cpu.txt
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Build Docker image
         run: docker build -f docker/Dockerfile.rpmbuild-el${{ inputs.el_version || '9' }} -t rpmbuild:el${{ inputs.el_version || '9' }} .
@@ -647,7 +647,7 @@ jobs:
           ls -la benchmark-*
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: benchmark-comparison-el${{ inputs.el_version || '9' }}
           path: |

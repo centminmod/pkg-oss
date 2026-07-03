@@ -97,7 +97,7 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Patch spec for BOLT relocations
         run: |
@@ -337,7 +337,7 @@ jobs:
             '
 
       - name: Upload BOLT profile + binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: bolt-profile
           path: |
@@ -346,7 +346,7 @@ jobs:
           retention-days: 7
 
       - name: Upload baseline RPMs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: baseline-rpms-bolt
           path: output/*.rpm
@@ -362,13 +362,13 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Download BOLT profile + binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: bolt-profile
           path: profiles/
 
       - name: Download baseline RPMs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: baseline-rpms-bolt
           path: rpms/
@@ -543,7 +543,7 @@ jobs:
             '
 
       - name: Upload BOLT artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nginx-rpms-el9-bolt
           path: output/*

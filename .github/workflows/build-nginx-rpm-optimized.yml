@@ -111,7 +111,7 @@ jobs:
           df -hT
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Build Docker image
         run: |
@@ -304,7 +304,7 @@ jobs:
           echo "=========================================="
 
       - name: Upload RPM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nginx-rpms-el${{ matrix.el_version }}-${{ inputs.crypto != 'system' && format('{0}-', inputs.crypto) || '' }}optimized${{ inputs.march == 'x86-64-v4' && '-v4' || '' }}
           path: output/*.rpm
