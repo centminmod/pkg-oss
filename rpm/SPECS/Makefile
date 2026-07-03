@@ -207,7 +207,7 @@ BASE_CONFIGURE_ARGS=\
 	--with-http_sub_module \
 	--with-http_v2_module \
 $$( if [ 0%{?rhel} -eq 7 ] || [ 0%{?suse_version} -eq 1315 ]; then \
-	continue; \
+	true; \
 else \
 	echo "--with-http_v3_module"; \
 fi; \
