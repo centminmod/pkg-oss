@@ -37,6 +37,11 @@ if curl -sfo /dev/null "${CHECK_URL}/repodata/repomd.xml.asc"; then
   REPO_GPGCHECK=1
   GPGKEY_LINE="gpgkey=https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx"
   echo "Repo is GPG-signed — enforcing gpgcheck=1 + repo_gpgcheck=1"
+  # Import the key up front: dnf's interactive key-import prompt defaults to
+  # "no" in a non-interactive container, which fails repo_gpgcheck metadata
+  # verification with "Bad GPG signature".
+  rpm --import https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx
+  echo "GPG key imported: $(rpm -q gpg-pubkey --qf '%{NAME}-%{VERSION}\n' | tail -1)"
 else
   GPGCHECK=0
   REPO_GPGCHECK=0
@@ -57,7 +62,9 @@ metadata_expire=60
 skip_if_unavailable=0
 REPOEOF
 
-dnf makecache 2>&1 | tail -3
+# -y: auto-accept the repo GPG key import (repo_gpgcheck keyring is separate
+# from the rpmdb, so the rpm --import above does not cover metadata checks)
+dnf -y makecache 2>&1 | tail -3
 
 # EL8 modular filtering blocks nginx-related packages; disable the module stream
 dnf module disable -y nginx 2>/dev/null || true
