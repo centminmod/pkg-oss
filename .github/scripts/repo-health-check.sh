@@ -118,7 +118,7 @@ if [ -n "${R2_ENDPOINT:-}" ] && [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
   if TOTALS=$(aws s3 ls "s3://${BUCKET}" --recursive --summarize \
         --endpoint-url "${R2_ENDPOINT}" | tail -2); then
     BYTES=$(echo "$TOTALS" | awk '/Total Size:/ {print $3}')
-    OBJECTS=$(echo "$TOTALS" | awk '/Total Objects:/ {print $2}')
+    OBJECTS=$(echo "$TOTALS" | awk '/Total Objects:/ {print $3}')
     GIB=$(awk -v b="$BYTES" 'BEGIN{printf "%.2f", b/1024/1024/1024}')
     echo "R2 storage: ${OBJECTS} objects, ${GIB} GiB in bucket ${BUCKET} (warn ${WARN_GB}, fail ${FAIL_GB})"
     if awk -v a="$GIB" -v b="$FAIL_GB" 'BEGIN{exit !(a>=b)}'; then
