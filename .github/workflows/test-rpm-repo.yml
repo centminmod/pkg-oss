@@ -13,12 +13,17 @@ on:
         required: false
         default: '9'
         type: string
+      upgrade_test:
+        description: 'Run upgrade-path + variant-swap test (stable, swap to awslc)'
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.variants }}-${{ inputs.el_versions }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.variants }}-${{ inputs.el_versions }}-${{ inputs.upgrade_test }}
   cancel-in-progress: true
 
 jobs:
@@ -69,3 +74,47 @@ jobs:
             -e EL="${{ matrix.el_version }}" \
             -v "$(pwd)/.github/scripts:/scripts:ro" \
             almalinux:${{ matrix.el_version }} bash /scripts/test-rpm-repo.sh
+
+  # ── Upgrade path + variant swap (stable → awslc) ──────────
+  # Needs systemd as PID 1 inside the container: the %postun hot-upgrade
+  # gates on `service nginx status`, so a plain almalinux image never
+  # exercises it. almalinux/<EL>-init boots systemd under --privileged.
+  upgrade-test:
+    needs: prepare
+    if: ${{ inputs.upgrade_test != false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        el_version: ${{ fromJSON(needs.prepare.outputs.matrix).el_version }}
+    name: Upgrade path stable/el${{ matrix.el_version }}
+
+    steps:
+      - name: Checkout repository (scripts only)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          sparse-checkout: |
+            .github/scripts
+
+      - name: Start systemd container
+        run: |
+          docker run -d --privileged --name upgrade-test \
+            --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            -e VARIANT=stable -e EL="${{ matrix.el_version }}" -e SWAP_TO=awslc \
+            -v "$(pwd)/.github/scripts:/scripts:ro" \
+            almalinux/${{ matrix.el_version }}-init
+          # wait for systemd to finish booting (degraded is fine in a container)
+          for _ in $(seq 1 30); do
+            STATE=$(docker exec upgrade-test systemctl is-system-running 2>/dev/null || true)
+            case "$STATE" in running|degraded) break ;; esac
+            sleep 2
+          done
+          echo "systemd state: ${STATE:-unknown}"
+
+      - name: Upgrade-path + variant-swap test
+        run: docker exec upgrade-test bash /scripts/upgrade-path-test.sh
+
+      - name: Cleanup container
+        if: always()
+        run: docker rm -f upgrade-test 2>/dev/null || true

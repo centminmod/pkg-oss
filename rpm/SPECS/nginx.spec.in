@@ -216,6 +216,18 @@ Provides: centminmod-nginx-r%{base_version}
 Provides: centminmod-nginx-crypto(%%CRYPTO_NAME%%)
 Provides: centminmod-nginx-zlib(%%ZLIB_NAME%%)
 Conflicts: nginx
+# Sibling crypto-variant base packages own the same /usr/local/nginx paths —
+# make the mutual exclusion explicit so dnf reports a clean conflict and
+# `dnf swap` is the documented migration path between variants.
+%if "%{crypto_lib}" != "system"
+Conflicts: centminmod-nginx
+%endif
+%if "%{crypto_lib}" != "awslc"
+Conflicts: centminmod-nginx-awslc
+%endif
+%if "%{crypto_lib}" != "openssl"
+Conflicts: centminmod-nginx-openssl
+%endif
 Requires: nginx-module-headers-more
 
 %if !(0%{?rhel} == 7)
