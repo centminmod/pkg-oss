@@ -28,8 +28,11 @@ jobs:
       - name: actionlint
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.7
-          # Inline-shellcheck of run: blocks stays disabled until the Phase-3
-          # extraction of giant run: blocks into .github/scripts/ lands.
+          # Inline-shellcheck of run: blocks stays disabled: the Phase-3
+          # extraction moved the giant blocks to .github/scripts/ (shellcheck'd
+          # below), but the remaining inline docker bash -c blocks (notably in
+          # publish-rpm-repo.yml) trip shellcheck false positives on nested
+          # quoting (SC1078/SC1083). Revisit if those blocks are extracted too.
           ./actionlint -color -shellcheck=
 
       - name: shellcheck (.github/scripts)

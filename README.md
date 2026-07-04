@@ -187,10 +187,10 @@ RPM builds run inside Docker containers (AlmaLinux 8/9/10). You do NOT need an R
 | **Build RPM (BOLT)** | `build-nginx-rpm-bolt.yml` | BOLT post-link binary optimization (POC) |
 | **Publish to R2** | `publish-rpm-repo.yml` | Upload RPMs to Cloudflare R2 + `dnf install` test |
 | **Test RPM Repository** | `test-rpm-repo.yml` | Functional test all 26 modules from live R2 repo |
-| **Benchmark Compare** | `benchmark-compare.yml` | h2load benchmark: base vs optimized |
-| **Benchmark Compare v4** | `benchmark-compare-v4-ubicloud.yml` | h2load benchmark on AVX-512 Ubicloud runners |
+| **Benchmark Compare** | `benchmark-compare.yml` | h2load benchmark: base vs optimized (`march` input: v3/v4) |
+| **Lint** | `lint.yml` | actionlint + shellcheck + yamllint on `.github/**` changes |
 
-All build workflows also have Ubicloud variants (`*-ubicloud.yml`) that run on AVX-512 capable runners for `x86-64-v4` builds.
+All build and benchmark workflows take a `runner` input (`github` default, or `ubicloud` for AVX-512 capable `ubicloud-standard-16` runners — required for `x86-64-v4` builds and benchmarks).
 
 ### Triggering a Build
 
@@ -221,6 +221,7 @@ gh workflow run test-rpm-repo.yml -f variants=stable,awslc,openssl,optimized,opt
 | `lto` | n, y | n | Link-Time Optimization (optimized workflow) |
 | `march` | generic, x86-64-v2, x86-64-v3, x86-64-v4 | generic | Microarchitecture target (optimized workflow) |
 | `linker` | default, mold | default | Linker selection (optimized workflow) |
+| `runner` | github, ubicloud | github | Runner type (`ubicloud` = AVX-512 capable `ubicloud-standard-16`, paid) |
 
 ### Publishing to R2
 
