@@ -7,4 +7,5 @@ SPECS/module-*
 SPECS/*.rpm-changelog
 SPECS/*.skip
 SPECS/*.spec
+!SPECS/centminmod-nginx-release.spec
 SRPMS

@@ -11,15 +11,8 @@ Production-grade Nginx RPM packages for **AlmaLinux/Rocky Linux 8, 9, and 10**, 
 ## Quick Install
 
 ```bash
-# AlmaLinux/Rocky Linux 8/9/10
-cat > /etc/yum.repos.d/centminmod-nginx.repo << 'EOF'
-[centminmod-nginx]
-name=Centmin Mod Nginx - EL$releasever - $basearch
-baseurl=https://rpm-nginx.centminmod.com/stable/el/$releasever/$basearch/
-enabled=1
-gpgcheck=0
-metadata_expire=60
-EOF
+# AlmaLinux/Rocky Linux 8/9/10 — installs .repo + GPG signing key
+dnf install -y https://rpm-nginx.centminmod.com/centminmod-nginx-release.noarch.rpm
 
 # EL8 only: disable nginx module stream to avoid conflicts
 dnf module disable -y nginx
@@ -27,6 +20,33 @@ dnf module disable -y nginx
 # Install nginx + all modules
 dnf install -y centminmod-nginx nginx-module-*
 ```
+
+Manual repository configuration (alternative to the release RPM):
+
+```bash
+cat > /etc/yum.repos.d/centminmod-nginx.repo << 'EOF'
+[centminmod-nginx]
+name=Centmin Mod Nginx - EL$releasever - $basearch
+baseurl=https://rpm-nginx.centminmod.com/stable/el/$releasever/$basearch/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx
+metadata_expire=6h
+EOF
+```
+
+## Package signing
+
+All RPMs (binary + source) and repository metadata are GPG-signed
+(see [docs/GPG-SIGNING.md](docs/GPG-SIGNING.md)). Public key:
+`https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx`
+
+> **Key fingerprint:** `8D0F 78A1 5F7D 4724 A72B  CF62 6660 EA8E 924F 64A1`
+> (Centmin Mod Nginx RPM Signing &lt;rpm-signing@centminmod.com&gt;, RSA 4096,
+> expires 2028-07-02). Verify with `gpg --show-keys RPM-GPG-KEY-centminmod-nginx`.
+
+Source RPMs are published per variant under `<variant>/el/<version>/SRPMS/`.
 
 ## Overview
 
@@ -161,16 +181,21 @@ RPM builds run inside Docker containers (AlmaLinux 8/9/10). You do NOT need an R
 
 | Workflow | File | Purpose |
 |----------|------|---------|
-| **Build RPM** | `build-nginx-rpm.yml` | Base + module RPMs with crypto/zlib selection |
-| **Build RPM (Optimized)** | `build-nginx-rpm-optimized.yml` | LTO, mold linker, `-march` targeting |
+| **Build RPM** | `build-nginx-rpm.yml` | Base + module RPMs (incl. debuginfo/debugsource) with crypto/zlib selection; non-blocking rpmlint gate |
+| **Build RPM (Optimized)** | `build-nginx-rpm-optimized.yml` | LTO, mold linker, `-march` targeting; non-blocking rpmlint gate |
 | **Build RPM (AutoFDO)** | `build-nginx-rpm-autofdo.yml` | AutoFDO profile-guided optimization (POC) |
 | **Build RPM (BOLT)** | `build-nginx-rpm-bolt.yml` | BOLT post-link binary optimization (POC) |
-| **Publish to R2** | `publish-rpm-repo.yml` | Upload RPMs to Cloudflare R2 + `dnf install` test |
-| **Test RPM Repository** | `test-rpm-repo.yml` | Functional test all 26 modules from live R2 repo |
-| **Benchmark Compare** | `benchmark-compare.yml` | h2load benchmark: base vs optimized |
-| **Benchmark Compare v4** | `benchmark-compare-v4-ubicloud.yml` | h2load benchmark on AVX-512 Ubicloud runners |
+| **Publish to R2** | `publish-rpm-repo.yml` | Upload RPMs to Cloudflare R2 + `dnf install` test; persists rollback snapshot + manifest |
+| **Test RPM Repository** | `test-rpm-repo.yml` | Functional test all 26 modules + upgrade-path/variant-swap test from live R2 repo |
+| **Benchmark Compare** | `benchmark-compare.yml` | h2load benchmark: base vs optimized (`march` input: v3/v4) |
+| **Rollback Repository** | `rollback-rpm-repo.yml` | Restore a previous repo entry point from a rollback snapshot |
+| **Prune Repository** | `prune-rpm-repo.yml` | Retention: keep newest N NEVRAs, regenerate metadata, delete old blobs (dry-run default) |
+| **Repo Health Check** | `repo-health-check.yml` | Daily cron: validate all published repos on the CDN, opens issue on failure |
+| **Publish index.html** | `publish-index-html.yml` | Single writer for the repo landing page (renders `.github/site/index.html`) |
+| **Configure R2 Lifecycle** | `configure-r2-lifecycle.yml` | One-shot: abort incomplete multipart uploads after 7 days |
+| **Lint** | `lint.yml` | actionlint + shellcheck + yamllint on `.github/**` changes |
 
-All build workflows also have Ubicloud variants (`*-ubicloud.yml`) that run on AVX-512 capable runners for `x86-64-v4` builds.
+All build and benchmark workflows take a `runner` input (`github` default, or `ubicloud` for AVX-512 capable `ubicloud-standard-16` runners — required for `x86-64-v4` builds and benchmarks).
 
 ### Triggering a Build
 
@@ -201,6 +226,7 @@ gh workflow run test-rpm-repo.yml -f variants=stable,awslc,openssl,optimized,opt
 | `lto` | n, y | n | Link-Time Optimization (optimized workflow) |
 | `march` | generic, x86-64-v2, x86-64-v3, x86-64-v4 | generic | Microarchitecture target (optimized workflow) |
 | `linker` | default, mold | default | Linker selection (optimized workflow) |
+| `runner` | github, ubicloud | github | Runner type (`ubicloud` = AVX-512 capable `ubicloud-standard-16`, paid) |
 
 ### Publishing to R2
 
@@ -220,9 +246,14 @@ The publish workflow:
 1. Downloads RPM artifacts from the build run
 2. Verifies complete package set (1 base + 26 modules)
 3. Generates YUM/DNF repository metadata via `createrepo_c`
-4. Uploads to R2 in 4 ordered phases (RPMs, metadata, signature, entry point)
-5. Purges CDN cache
-6. Runs automated `dnf install` test from the live repository
+4. Snapshots the previous `repomd.xml` + writes a publish manifest to `<variant>/el/<EL>/rollback/` (10 kept)
+5. Uploads to R2 in ordered phases (RPMs, metadata, signature, entry point)
+6. Purges CDN cache
+7. Runs automated `dnf install` test from the live repository
+
+To undo a bad publish, dispatch `rollback-rpm-repo.yml` with the variant/EL —
+it restores the newest snapshot entry point (or a named one), verifies all
+referenced metadata blobs still exist, and re-tests installability.
 
 ## Compiler Configuration
 
@@ -279,7 +310,7 @@ Makefile (root)                    # Version management, release automation
 ### Directory Layout
 
 ```
-.github/workflows/          # CI/CD workflows (17 total)
+.github/workflows/          # CI/CD workflows (16 total)
 rpm/SPECS/                   # Spec templates, Makefiles, module definitions
 rpm/SOURCES/                 # nginx.conf, systemd services, config files
 contrib/src/                 # Module source directories with patches

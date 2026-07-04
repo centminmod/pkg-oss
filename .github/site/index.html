@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centmin Mod Nginx RPM Repository</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#333;line-height:1.6;background:#f8f9fa}
+.hero{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:3rem 1rem;text-align:center}
+.hero h1{font-size:2rem;margin-bottom:.5rem}
+.hero p{color:#b0b8c8;font-size:1.1rem}
+.wrap{max-width:800px;margin:0 auto;padding:2rem 1rem}
+h2{color:#1a1a2e;margin:2rem 0 1rem;font-size:1.3rem;border-bottom:2px solid #e0e0e0;padding-bottom:.3rem}
+p,ul{margin-bottom:1rem}
+ul{margin-left:1.5rem}
+pre{background:#1a1a2e;color:#e0e0e0;padding:1.2rem;border-radius:8px;overflow-x:auto;font-size:.88rem;margin-bottom:1.5rem;line-height:1.5}
+.cmt{color:#6a9955}
+table{width:100%;border-collapse:collapse;margin-bottom:1.5rem}
+th{background:#1a1a2e;color:#fff;padding:.6rem;text-align:left;font-size:.88rem}
+td{padding:.5rem .6rem;border-bottom:1px solid #e0e0e0;font-size:.88rem}
+tr:hover{background:#f0f0f0}
+code{background:#e8e8e8;padding:.1rem .35rem;border-radius:3px;font-size:.85rem}
+.mtable{width:100%;border-collapse:collapse;margin-bottom:1.5rem;font-size:.88rem}
+.mtable td{padding:.4rem .6rem;border-bottom:1px solid #eee}
+.mtable td:first-child{font-weight:500;white-space:nowrap;width:260px}
+.mtable tr:hover{background:#f8f9fa}
+.foot{text-align:center;padding:2rem 1rem;color:#888;font-size:.85rem;border-top:1px solid #e0e0e0;margin-top:2rem}
+.foot a{color:#555}
+a{color:#2563eb;text-decoration:none}
+a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="hero">
+<h1>Centmin Mod Nginx RPM Repository</h1>
+<p>High-performance Nginx packages for AlmaLinux &amp; Rocky Linux</p>
+</div>
+<div class="wrap">
+
+<h2>Getting Started</h2>
+<p>Set up the repository on your server and install Nginx:</p>
+<pre><span class="cmt"># Step 1 &mdash; Add the repository (installs .repo + GPG signing key)</span>
+dnf install -y https://rpm-nginx.centminmod.com/centminmod-nginx-release.noarch.rpm
+
+<span class="cmt"># Alternative &mdash; manual repository configuration:</span>
+cat &gt; /etc/yum.repos.d/centminmod-nginx.repo &lt;&lt; 'EOF'
+[centminmod-nginx]
+name=Centmin Mod Nginx
+baseurl=https://rpm-nginx.centminmod.com/stable/el/$releasever/$basearch/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://rpm-nginx.centminmod.com/RPM-GPG-KEY-centminmod-nginx
+metadata_expire=6h
+EOF
+
+<span class="cmt"># EL8 only: disable nginx module stream to avoid conflicts</span>
+dnf module disable -y nginx  <span class="cmt"># skip on EL9/EL10</span>
+
+<span class="cmt"># Step 2 &mdash; Install Nginx (+ all modules, optional)</span>
+<span class="cmt"># Note: nginx-module-* pulls in all 26 modules and their system libraries</span>
+<span class="cmt"># (luajit, libmaxminddb, gd, libxslt, ...). Minimal install alternative:</span>
+<span class="cmt">#   dnf install -y centminmod-nginx</span>
+dnf install -y centminmod-nginx nginx-module-*</pre>
+<p><code>nginx-module-headers-more</code> is always installed with the base package: the stock
+<code>nginx.conf</code> sets the Centmin Mod identity headers via <code>more_set_headers</code>.</p>
+
+<p>Start and enable Nginx:</p>
+<pre>systemctl start nginx
+systemctl enable nginx</pre>
+
+<h2>What You Get</h2>
+<ul>
+<li>Production-ready Nginx at <code>/usr/local/nginx/</code></li>
+<li>26 optional modules you can add any time</li>
+<li>Optimized builds with modern GCC toolsets</li>
+<li>Ready-to-use config files for common setups</li>
+<li>Managed via systemd like any other service</li>
+</ul>
+
+<h2>Adding Modules</h2>
+<p>Install only the modules you need:</p>
+<pre><span class="cmt"># Example: add Brotli compression and Lua scripting</span>
+dnf install nginx-module-brotli nginx-module-lua
+
+<span class="cmt"># See everything available</span>
+dnf list available nginx-module-*</pre>
+
+<h2>Prerequisites</h2>
+<p>Most dependencies are resolved automatically by dnf. Some modules require system libraries that dnf will pull in when you install them:</p>
+<table>
+<tr><th>System Package</th><th>Required By</th><th>Notes</th></tr>
+<tr><td><code>procps-ng</code></td><td>centminmod-nginx (base)</td><td>Explicit RPM dependency</td></tr>
+<tr><td><code>brotli</code></td><td>nginx-module-brotli</td><td>Auto-resolved by dnf</td></tr>
+<tr><td><code>libmaxminddb</code></td><td>nginx-module-geoip2</td><td>Auto-resolved by dnf</td></tr>
+<tr><td><code>gd</code></td><td>nginx-module-image-filter</td><td>Auto-resolved by dnf</td></tr>
+<tr><td><code>libxslt</code></td><td>nginx-module-xslt, nginx-module-dav-ext</td><td>Auto-resolved by dnf</td></tr>
+<tr><td><code>libxml2</code></td><td>nginx-module-xslt, nginx-module-dav-ext</td><td>Auto-resolved by dnf</td></tr>
+<tr><td><code>libzstd</code></td><td>nginx-module-zstd</td><td>Auto-resolved by dnf</td></tr>
+</table>
+<p>On minimal installs, you can pre-install all prerequisites at once:</p>
+<pre>dnf install -y procps-ng brotli libmaxminddb gd libxslt libxml2 libzstd</pre>
+<p><strong>EL8 only:</strong> Run <code>dnf module disable -y nginx</code> before installing to avoid modular filtering conflicts.</p>
+<p><strong>Module dependencies:</strong> <code>nginx-module-lua</code>, <code>nginx-module-set-misc</code>, and <code>nginx-module-encrypted-session</code> require <code>nginx-module-ndk</code> &mdash; resolved automatically by dnf.</p>
+
+<h2>Available Modules</h2>
+<p>Install any module with <code>dnf install nginx-module-&lt;name&gt;</code>. Each module auto-configures itself via drop-in config.</p>
+<table class="mtable">
+<tr><td>nginx-module-accesskey</td><td>Access key-based authorization</td></tr>
+<tr><td>nginx-module-brotli</td><td>Brotli compression (static + dynamic)</td></tr>
+<tr><td>nginx-module-cache-purge</td><td>Purge cached content by URL</td></tr>
+<tr><td>nginx-module-dav-ext</td><td>WebDAV extended methods (PROPFIND, OPTIONS, etc.)</td></tr>
+<tr><td>nginx-module-echo</td><td>Shell-style output and testing utilities</td></tr>
+<tr><td>nginx-module-encrypted-session</td><td>Encrypt/decrypt session variables</td></tr>
+<tr><td>nginx-module-fancyindex</td><td>Themed directory listings</td></tr>
+<tr><td>nginx-module-geoip2</td><td>MaxMind GeoIP2 database lookups</td></tr>
+<tr><td>nginx-module-headers-more</td><td>Add, set, or clear HTTP headers</td></tr>
+<tr><td>nginx-module-http-concat</td><td>Concatenate files in a single response</td></tr>
+<tr><td>nginx-module-http-rdns</td><td>Reverse DNS lookups for client IPs</td></tr>
+<tr><td>nginx-module-http-redis</td><td>Redis caching for HTTP responses</td></tr>
+<tr><td>nginx-module-image-filter</td><td>On-the-fly image resizing and transforms</td></tr>
+<tr><td>nginx-module-length-hiding</td><td>Pad response length to prevent side-channel leaks</td></tr>
+<tr><td>nginx-module-lua</td><td>Lua scripting (OpenResty lua-nginx-module)</td></tr>
+<tr><td>nginx-module-memc</td><td>Extended memcached interface</td></tr>
+<tr><td>nginx-module-ndk</td><td>Nginx Development Kit (dependency for lua, set-misc)</td></tr>
+<tr><td>nginx-module-njs</td><td>NGINX JavaScript &mdash; scripting with njs</td></tr>
+<tr><td>nginx-module-redis2</td><td>Redis 2.0 protocol support</td></tr>
+<tr><td>nginx-module-set-misc</td><td>Extended variable manipulation (base64, hashes, etc.)</td></tr>
+<tr><td>nginx-module-srcache</td><td>Subrequest-based caching (memcached/redis backends)</td></tr>
+<tr><td>nginx-module-subs-filter</td><td>Regex-based response body substitution</td></tr>
+<tr><td>nginx-module-testcookie</td><td>Bot detection via cookie challenge</td></tr>
+<tr><td>nginx-module-vts</td><td>Virtual host traffic status &amp; monitoring</td></tr>
+<tr><td>nginx-module-xslt</td><td>XML/XSLT response transformation</td></tr>
+<tr><td>nginx-module-zstd</td><td>Zstandard compression (static + dynamic)</td></tr>
+</table>
+
+<h2>Build Variants</h2>
+<p>Different builds are available. Most users should use <strong>stable</strong> (the default above).</p>
+<table>
+<tr><th>Variant</th><th>Best For</th></tr>
+<tr><td><strong>stable</strong></td><td>Most users &mdash; uses your system&rsquo;s OpenSSL</td></tr>
+<tr><td><strong>awslc</strong></td><td>AWS-LC crypto library (FIPS-capable)</td></tr>
+<tr><td><strong>openssl</strong></td><td>Custom OpenSSL built from source</td></tr>
+<tr><td><strong>optimized</strong></td><td>LTO + x86-64-v3 + mold linker (Haswell 2013+)</td></tr>
+<tr><td><strong>optimized-v4</strong></td><td>LTO + x86-64-v4 + mold linker (Skylake-X / Zen 4+, AVX-512)</td></tr>
+<tr><td><strong>awslc-optimized</strong></td><td>AWS-LC + LTO + x86-64-v3 + mold (Haswell 2013+)</td></tr>
+<tr><td><strong>awslc-optimized-v4</strong></td><td>AWS-LC + LTO + x86-64-v4 + mold (Skylake-X / Zen 4+, AVX-512)</td></tr>
+</table>
+<p>To switch variants, replace <code>stable</code> with the variant name in the baseurl.</p>
+
+<h2>Supported Systems</h2>
+<ul>
+<li>AlmaLinux / Rocky Linux 8 (x86_64)</li>
+<li>AlmaLinux / Rocky Linux 9 (x86_64)</li>
+<li>AlmaLinux / Rocky Linux 10 (x86_64)</li>
+</ul>
+
+</div>
+<div class="foot">
+<p><a href="https://centminmod.com">centminmod.com</a> &middot; <a href="https://github.com/centminmod/pkg-oss">GitHub</a> &middot; Updated %%UPDATED%%</p>
+</div>
+</body>
+</html>

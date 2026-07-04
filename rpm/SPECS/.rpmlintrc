@@ -1,0 +1,80 @@
+# rpmlint filters for Centmin Mod nginx RPMs — accepted exceptions only.
+# Legacy addFilter format: works with rpmlint 1.x (-f) and 2.x (-r).
+# Anything rpmlint reports that is NOT filtered here is worth a look.
+# Tuned against real findings from run 28692161298 (EL8/9/10, 108 RPMs).
+
+# Centmin Mod installs to /usr/local/nginx and /usr/local/sbin by design
+# (matches CM source-build layout; upstream nginx.org uses /etc/nginx).
+addFilter(r'dir-or-file-in-usr-local')
+
+# Config lives under /usr/local/nginx/conf (CM layout), so %config(noreplace)
+# entries are outside /etc — intentional, same reason as above
+addFilter(r'non-etc-or-var-file-marked-as-conffile')
+
+# Upstream nginx.org license string, kept verbatim ("2-clause BSD-like license")
+addFilter(r'invalid-license')
+
+# nginx has no man pages upstream; docs live at nginx.org
+addFilter(r'no-manual-page-for-binary')
+
+# awslc/openssl variants intentionally link crypto statically
+# (CM design: pinned crypto version independent of the OS)
+addFilter(r'statically-linked-binary')
+
+# CM design: proxy_temp_path is /tmp/nginx_proxy — %post pre-creates it
+addFilter(r'use-tmp-in-%post')
+
+# lua module ships the bundled nginx-luajit headers on purpose so lua C
+# modules can be compiled against the exact luajit2 nginx embeds
+addFilter(r'devel-file-in-non-devel-package /usr/include/nginx-luajit')
+
+# Upstream pkg-oss provides style (webserver, nginx-rVERSION aliases used
+# by the module dependency scheme) — unversioned by design
+addFilter(r'unversioned-explicit-provides')
+
+# "nginx" is spelled lowercase in summaries (brand), not a typo
+addFilter(r'summary-not-capitalized')
+
+# The generated spec is nginx.spec inside a centminmod-nginx src.rpm — the
+# whole build system keys on the nginx.spec name (make nginx.spec)
+addFilter(r'invalid-spec-name')
+
+# EL10 %build sources /usr/lib/gcc-toolset/15-env.source to activate the
+# toolset — a build-time path, not a packaged library path
+addFilter(r'hardcoded-library-path.*gcc-toolset')
+
+# /etc/logrotate.d/nginx is named after the service (nginx), not the
+# package (centminmod-nginx) — deliberate, matches the systemd unit name
+addFilter(r'incoherent-logrotate-file')
+
+# Local sources (nginx.conf, logrotate, *.sh, drop-in confs) have no URL
+addFilter(r'invalid-url')
+
+# nginx's ./configure is not autoconf; --libdir does not exist
+addFilter(r'configure-without-libdir-spec')
+
+# rpmlint 1.x doesn't recognize the modern `%patch -PNNN` syntax the
+# Makefile generates (rpm 4.18+); patches ARE applied in %prep
+addFilter(r'patch-not-applied')
+
+# Changelog entries use upstream version-release (no %{?dist}.cmm suffix
+# or epoch); versions are managed by docs/ changelog templates
+addFilter(r'incoherent-version-in-changelog')
+
+# Generated specs mix tabs (Makefile-substituted blocks) and spaces (template)
+addFilter(r'mixed-use-of-spaces-and-tabs')
+
+# nginx calls low-level OpenSSL APIs by design (its own TLS handling);
+# system crypto-policy compliance is not applicable to a web server core
+addFilter(r'crypto-policy-non-compliance-openssl')
+
+# nginx.check-reload.sh is an executable helper shipped in SOURCES
+addFilter(r'strange-permission.*\.sh')
+
+# %post chmods log files it creates under /usr/local/nginx/logs — intended
+addFilter(r'dangerous-command-in-%post chmod')
+
+# Filters cover all 7 crypto/zlib variants and both rpmlint major versions;
+# a filter unused in one variant is load-bearing in another (e.g.
+# statically-linked-binary only fires on awslc/openssl builds)
+addFilter(r'unused-rpmlintrc-filter')

@@ -36,20 +36,17 @@ Epoch: %{epoch}
 %define epoch 1
 Epoch: %{epoch}
 BuildRequires: gcc-toolset-14-gcc gcc-toolset-14-gcc-c++
-%define _debugsource_template %{nil}
 %endif
 
 %if 0%{?rhel} == 9
 %define epoch 1
 Epoch: %{epoch}
 BuildRequires: gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
-%define _debugsource_template %{nil}
 %endif
 
 %if 0%{?rhel} == 10
 %define epoch 1
 Epoch: %{epoch}
-%define _debugsource_template %{nil}
 %endif
 
 %if 0%{?fedora}
@@ -99,51 +96,16 @@ nginx %%SHORT_SUMMARY%%.
 %define opt_linker %%LINKER%%
 %define opt_autofdo %%AUTOFDO%%
 
-# Centmin Mod compiler flags — CC_OPT must match nginx.spec.in for ABI compatibility
-%if 0%{?rhel} >= 10
-%define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
-%else
-%define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-D_FORTIFY_SOURCE=2 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
-%endif
-# No -pie for module spec — modules build .so files, not executables
+# Shared compiler/optimization flags (see rpm/SPECS/compiler-flags.spec.inc) —
+# must match nginx.spec.in for ABI compatibility
+%%COMPILER_FLAGS%%
+
+# Linker flags — kept per-template: no -pie here (modules build .so files,
+# not executables); nginx.spec.in links the base binary with -pie
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,--as-needed -Wl,-Bsymbolic-functions
 
-# LTO support — must match nginx.spec.in for ABI compatibility
-%if "%{opt_lto}" == "y"
-%define LTO_CC_OPT -flto=auto
-%define LTO_LD_OPT -flto=auto
-%else
-%define LTO_CC_OPT %{nil}
-%define LTO_LD_OPT %{nil}
-%endif
-
-# Microarchitecture targeting — must match nginx.spec.in
-%if "%{opt_march}" == "x86-64-v2"
-%define MARCH_CC_OPT -march=x86-64-v2
-%endif
-%if "%{opt_march}" == "x86-64-v3"
-%define MARCH_CC_OPT -march=x86-64-v3
-%endif
-%if "%{opt_march}" == "x86-64-v4"
-%define MARCH_CC_OPT -march=x86-64-v4
-%endif
-%if "%{opt_march}" == "generic"
-%define MARCH_CC_OPT %{nil}
-%endif
-
-# Mold linker — must match nginx.spec.in
 %if "%{opt_linker}" == "mold"
-%define LINKER_LD_OPT -fuse-ld=mold
 BuildRequires: mold
-%else
-%define LINKER_LD_OPT %{nil}
-%endif
-
-# AutoFDO — must match nginx.spec.in for ABI compatibility
-%if "%{opt_autofdo}" != "none" && "%{opt_autofdo}" != ""
-%define AUTOFDO_CC_OPT -fauto-profile=%{opt_autofdo} -Wno-error=array-bounds
-%else
-%define AUTOFDO_CC_OPT %{nil}
 %endif
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
@@ -248,14 +210,6 @@ for so in `find %{bdir}/objs/ -maxdepth 1 -type f -name "*.so"`; do
 %{__install} -m755 $so \
    $RPM_BUILD_ROOT%{cm_moduledir}/
 done
-
-%check
-%{__rm} -rf $RPM_BUILD_ROOT/usr/src
-cd %{bdir}
-grep -v 'usr/src' debugfiles.list > debugfiles.list.new && mv debugfiles.list.new debugfiles.list
-cat /dev/null > debugsources.list
-%clean
-%{__rm} -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root)

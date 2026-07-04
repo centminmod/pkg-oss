@@ -9,7 +9,7 @@
 %define opt_linker %%LINKER%%
 %define opt_autofdo %%AUTOFDO%%
 
-# Centmin Mod path macros — NEVER redefine global RPM macros (%{_libdir} etc.)
+# Centmin Mod path macros — NEVER redefine global RPM macros (%%{_libdir} etc.)
 %global cm_prefix       /usr/local/nginx
 %global cm_sbindir      /usr/local/sbin
 %global cm_confdir      %{cm_prefix}/conf
@@ -58,7 +58,6 @@ Requires(pre): shadow-utils
 Requires: procps-ng
 BuildRequires: openssl-devel >= 1.1.1
 BuildRequires: gcc-toolset-14-gcc gcc-toolset-14-gcc-c++
-%define _debugsource_template %{nil}
 %endif
 
 %if 0%{?rhel} == 9
@@ -68,7 +67,6 @@ Requires(pre): shadow-utils
 Requires: procps-ng
 BuildRequires: openssl-devel
 BuildRequires: gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
-%define _debugsource_template %{nil}
 %endif
 
 %if 0%{?rhel} == 10
@@ -78,7 +76,6 @@ Requires(pre): shadow-utils
 Requires: procps-ng
 BuildRequires: openssl-devel
 BuildRequires: gcc-toolset-15-gcc gcc-toolset-15-gcc-c++
-%define _debugsource_template %{nil}
 %endif
 
 %if "%{opt_linker}" == "mold"
@@ -92,59 +89,15 @@ BuildRequires: mold
 
 %define bdir %{_builddir}/nginx-%{base_version}
 
-# Centmin Mod compiler flags — %{optflags} intentionally NOT used because
-# it reflects system GCC defaults, not the gcc-toolset compiler.
-# Dropping %{optflags} loses Red Hat's -specs= annotations but gains explicit
-# control matching CM's build configuration.
-%if 0%{?rhel} >= 10
-%define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
-%else
-%define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-D_FORTIFY_SOURCE=2 --param=ssp-buffer-size=4 $(pcre2-config --cflags)
-%endif
+# Shared compiler/optimization flags (see rpm/SPECS/compiler-flags.spec.inc)
+%%COMPILER_FLAGS%%
+
+# Linker flags — kept per-template: the base binary links with -pie,
+# nginx-module.spec.in intentionally omits it (modules are .so files)
 %if 0%{?rhel} >= 10
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -Wl,--as-needed
 %else
 %define WITH_LD_OPT -Wl,-z,relro -Wl,-z,now -pie -Wl,--as-needed -Wl,-Bsymbolic-functions
-%endif
-
-# LTO support — -flto=auto on both compile and link lines (GCC requirement)
-%if "%{opt_lto}" == "y"
-%define LTO_CC_OPT -flto=auto
-%define LTO_LD_OPT -flto=auto
-%else
-%define LTO_CC_OPT %{nil}
-%define LTO_LD_OPT %{nil}
-%endif
-
-# Microarchitecture targeting — compile-time only
-%if "%{opt_march}" == "x86-64-v2"
-%define MARCH_CC_OPT -march=x86-64-v2
-%endif
-%if "%{opt_march}" == "x86-64-v3"
-%define MARCH_CC_OPT -march=x86-64-v3
-%endif
-%if "%{opt_march}" == "x86-64-v4"
-%define MARCH_CC_OPT -march=x86-64-v4
-%endif
-%if "%{opt_march}" == "generic"
-%define MARCH_CC_OPT %{nil}
-%endif
-
-# Mold linker — link-time only
-%if "%{opt_linker}" == "mold"
-%define LINKER_LD_OPT -fuse-ld=mold
-%else
-%define LINKER_LD_OPT %{nil}
-%endif
-
-# AutoFDO — compile-time profile-guided optimization
-# -fauto-profile goes in --with-cc-opt ONLY (compile-time flag, not linker)
-%if "%{opt_autofdo}" != "none" && "%{opt_autofdo}" != ""
-# -Wno-error=array-bounds: AutoFDO profile-guided inlining can trigger
-# false-positive bounds warnings with -Werror (GCC bug with aggressive optimization)
-%define AUTOFDO_CC_OPT -fauto-profile=%{opt_autofdo} -Wno-error=array-bounds
-%else
-%define AUTOFDO_CC_OPT %{nil}
 %endif
 
 %define BASE_CONFIGURE_ARGS $(echo "%%BASE_CONFIGURE_ARGS%%")
@@ -216,6 +169,22 @@ Provides: centminmod-nginx-r%{base_version}
 Provides: centminmod-nginx-crypto(%%CRYPTO_NAME%%)
 Provides: centminmod-nginx-zlib(%%ZLIB_NAME%%)
 Conflicts: nginx
+# Sibling crypto-variant base packages own the same /usr/local/nginx paths —
+# make the mutual exclusion explicit so dnf reports a clean conflict and
+# `dnf swap` is the documented migration path between variants.
+%if "%{crypto_lib}" != "system"
+Conflicts: centminmod-nginx
+%endif
+%if "%{crypto_lib}" != "awslc"
+Conflicts: centminmod-nginx-awslc
+%endif
+%if "%{crypto_lib}" != "openssl"
+Conflicts: centminmod-nginx-openssl
+%endif
+# Hard dependency by design (maintainer decision, Phase 5.6): the shipped
+# nginx.conf sets Centmin Mod identity headers via more_set_headers, and
+# drop.conf/staticfiles.conf use it for ACME challenge responses — without
+# headers-more installed, `nginx -t` fails out of the box.
 Requires: nginx-module-headers-more
 
 %if !(0%{?rhel} == 7)
@@ -345,7 +314,7 @@ make %{?_smp_mflags}
 %{__make} DESTDIR=$RPM_BUILD_ROOT INSTALLDIRS=vendor install
 
 # With --prefix=/usr/local/nginx, make install puts html at cm_htmldir already
-# No need to move html — it's already at %{cm_htmldir}
+# No need to move html — it's already at %%{cm_htmldir}
 
 # Remove .default config files and fastcgi.conf installed by make install
 %{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/*.default
@@ -452,15 +421,6 @@ make %{?_smp_mflags}
 %{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/koi-utf
 %{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/koi-win
 %{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/win-utf
-
-%check
-%{__rm} -rf $RPM_BUILD_ROOT/usr/src
-cd %{bdir}
-grep -v 'usr/src' debugfiles.list > debugfiles.list.new && mv debugfiles.list.new debugfiles.list
-cat /dev/null > debugsources.list
-
-%clean
-%{__rm} -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root)

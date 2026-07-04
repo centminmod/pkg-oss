@@ -1,0 +1,71 @@
+name: Publish repo index.html
+
+# Single writer for the repo landing page (Phase 4.6). Previously every
+# publish-rpm-repo run (variant x EL = up to 21 per full cycle) uploaded its
+# own copy — redundant uploads/purges and a cross-variant last-writer-wins
+# race on the "Updated" date. Dispatch this once per publish cycle, or
+# whenever .github/site/index.html changes.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-index-html
+  cancel-in-progress: false
+
+env:
+  R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+  R2_BUCKET: rpm-nginx
+  CUSTOM_DOMAIN: rpm-nginx.centminmod.com
+  AWS_DEFAULT_REGION: auto
+  AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+jobs:
+  publish-index:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout site source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          sparse-checkout: |
+            .github/site
+
+      - name: Render, upload and purge index.html
+        run: |
+          UPDATED="$(date -u '+%B %d, %Y')"
+          sed "s/%%UPDATED%%/${UPDATED}/" .github/site/index.html > /tmp/index.html
+          if grep -q '%%' /tmp/index.html; then
+            echo "ERROR: unsubstituted %%PLACEHOLDER%% left in index.html"
+            exit 1
+          fi
+
+          echo "=== Upload index.html (Updated ${UPDATED}) ==="
+          aws s3 cp /tmp/index.html "s3://${R2_BUCKET}/index.html" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "public, max-age=300"
+
+          echo "=== Purge CDN cache ==="
+          PURGE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data "{\"files\":[\"https://${CUSTOM_DOMAIN}/index.html\",\"https://${CUSTOM_DOMAIN}/\"]}")
+          HTTP_CODE=$(echo "$PURGE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          echo "Purge HTTP code: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "WARNING: CDN purge returned HTTP $HTTP_CODE (non-fatal)"
+          fi
+
+          echo "=== Verify via CDN ==="
+          sleep 5
+          if curl -sf "https://${CUSTOM_DOMAIN}/index.html" | grep -qF "Updated ${UPDATED}"; then
+            echo "PASS: live index.html shows 'Updated ${UPDATED}'"
+          else
+            echo "WARNING: live index.html does not yet show the new date (CDN propagation)"
+          fi

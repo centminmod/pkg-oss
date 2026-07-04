@@ -1,0 +1,12 @@
+# Keep SHA-pinned GitHub Actions up to date (Dependabot rewrites the pin +
+# version comment in a PR; lint.yml validates the diff).
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

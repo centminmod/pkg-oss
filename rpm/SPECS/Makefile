@@ -79,8 +79,12 @@ CRYPTO_MODULE_SOURCES=	Source51: openssl-$(OPENSSL_CUSTOM_VERSION).tar.gz
 CRYPTO_MODULE_PREP=	tar -C %{_builddir} -xzf %{SOURCE51}
 # Pre-build OpenSSL once to /tmp/openssl-prebuilt, skip on subsequent modules
 # Sentinel: check if ssl.h exists; all 26 modules share /tmp in the same docker run
+# flock serializes concurrent rpmbuilds so the check-then-build is atomic;
+# the sentinel is re-checked under the lock
 define CRYPTO_MODULE_PREBUILD
 OSSL_PREFIX=/tmp/openssl-prebuilt
+(
+flock 9
 if [ ! -f "$${OSSL_PREFIX}/include/openssl/ssl.h" ]; then
   echo "=== Building OpenSSL $(OPENSSL_CUSTOM_VERSION) to $${OSSL_PREFIX} (first module) ==="
   mkdir -p "$${OSSL_PREFIX}"
@@ -94,6 +98,7 @@ if [ ! -f "$${OSSL_PREFIX}/include/openssl/ssl.h" ]; then
 else
   echo "=== Reusing pre-built OpenSSL at $${OSSL_PREFIX} ==="
 fi
+) 9>"$${OSSL_PREFIX}.lock"
 endef
 export CRYPTO_MODULE_PREBUILD
 else ifeq ($(CRYPTO),awslc)
@@ -101,8 +106,12 @@ CRYPTO_MODULE_SOURCES=	Source51: aws-lc-$(AWSLC_VERSION).tar.gz
 CRYPTO_MODULE_PREP=	tar -C %{_builddir} -xzf %{SOURCE51}
 # Pre-build AWS-LC once to /tmp/awslc-prebuilt, skip on subsequent modules
 # Sentinel: check if ssl.h exists; all 26 modules share /tmp in the same docker run
+# flock serializes concurrent rpmbuilds so the check-then-build is atomic;
+# the sentinel is re-checked under the lock
 define CRYPTO_MODULE_PREBUILD
 AWSLC_PREFIX=/tmp/awslc-prebuilt
+(
+flock 9
 if [ ! -f "$${AWSLC_PREFIX}/include/openssl/ssl.h" ]; then
   echo "=== Building AWS-LC $(AWSLC_VERSION) to $${AWSLC_PREFIX} (first module) ==="
   unset CFLAGS CXXFLAGS LDFLAGS
@@ -125,6 +134,7 @@ if [ ! -f "$${AWSLC_PREFIX}/include/openssl/ssl.h" ]; then
 else
   echo "=== Reusing pre-built AWS-LC at $${AWSLC_PREFIX} ==="
 fi
+) 9>"$${AWSLC_PREFIX}.lock"
 endef
 export CRYPTO_MODULE_PREBUILD
 else
@@ -207,7 +217,7 @@ BASE_CONFIGURE_ARGS=\
 	--with-http_sub_module \
 	--with-http_v2_module \
 $$( if [ 0%{?rhel} -eq 7 ] || [ 0%{?suse_version} -eq 1315 ]; then \
-	continue; \
+	true; \
 else \
 	echo "--with-http_v3_module"; \
 fi; \
@@ -252,6 +262,17 @@ list-module-%:
 list-all-modules: $(addprefix list-module-, $(MODULES))
 
 list-base-modules: $(addprefix list-module-, $(BASE_MODULES))
+
+# Plain space-separated module list — single source of truth consumed by CI
+# workflows (ALL_MODULES / EXPECTED_MODULES). Keep output machine-readable.
+echo-base-modules:
+	@echo $(BASE_MODULES)
+
+# Local pre-flight validation (Docker-based, macOS-safe):
+#   make preflight              lint + spec-gen dry-run + patch sanity
+#   make preflight MODULE=lua   additionally smoke-build one module
+preflight:
+	@bash $(CURDIR)/../../.github/scripts/preflight.sh $(MODULE)
 
 list: list-base list-all-modules
 
@@ -359,6 +380,8 @@ endif
 		-e 's#%%MARCH%%#$(MARCH)#g' \
 		-e 's#%%LINKER%%#$(LINKER)#g' \
 		-e 's#%%AUTOFDO%%#$(AUTOFDO)#g' \
+		-e '/^%%COMPILER_FLAGS%%$$/r compiler-flags.spec.inc' \
+		-e '/^%%COMPILER_FLAGS%%$$/d' \
 		> nginx$(BASE_SUFFIX).spec ; \
 	sed nginx$(BASE_SUFFIX).rpm-changelog \
 		-e 's#%%BASE_VERSION%%#$(BASE_VERSION)#g' \
@@ -496,6 +519,8 @@ nginx-module-%.spec: nginx-module-%.rpm-changelog
 		-e "s#%%MODULE_PREINSTALL%%#$${preinstall}#g" \
 		-e "s#%%MODULE_FILES%%#$${files}#g" \
 		-e "s#%%MODULE_POST%%#$${post}#g" \
+		-e '/^%%COMPILER_FLAGS%%$$/r compiler-flags.spec.inc' \
+		-e '/^%%COMPILER_FLAGS%%$$/d' \
 		> $@.tmp && \
 	sed nginx-module-$*.rpm-changelog \
 		-e 's#%%TARGET_VERSION%%#$(TARGET_VERSION)#g' \
@@ -559,6 +584,20 @@ check-compat-%:
 		fi ; \
 		if [ "`rpm --eval '0%{?rhel}'`" -eq 7 ]; then \
 			echo "otel can not be built on RHEL 7 due to too old compiler" > \
+			nginx-module-$${module}.skip ; \
+			exit ; \
+		fi ; \
+		;; \
+		zstd) \
+		if [ `rpm --eval '0%{?rhel}'` -eq 7 ] || [ `rpm --eval '0%{?amzn}'` -eq 2 ]; then \
+			echo "zstd module can not be built on RHEL/CentOS 7 or Amazon Linux 2 due to libzstd-devel absence" > \
+			nginx-module-$${module}.skip ; \
+			exit ; \
+		fi ; \
+		;; \
+		passenger) \
+		if [ `rpm --eval '0%{?rhel}'` -eq 7 ] || [ `rpm --eval '0%{?amzn}'` -eq 2 ]; then \
+			echo "Passenger requires Ruby >= 2.5; RHEL/CentOS 7 and Amazon Linux 2 ship older Ruby" > \
 			nginx-module-$${module}.skip ; \
 			exit ; \
 		fi ; \
@@ -648,6 +687,6 @@ clean:
 	@rm -f attest-base attest-module-*
 	@find $(SRCPATH)/ -type l -delete
 
-.PHONY:	default list list-base list-all-modules list-base-modules all modules specs test test-debug clean
+.PHONY:	default list list-base list-all-modules list-base-modules echo-base-modules preflight all modules specs test test-debug clean
 
 .SECONDARY:

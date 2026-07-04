@@ -1,0 +1,46 @@
+name: Lint
+
+on:
+  push:
+    paths:
+      - '.github/**'
+  pull_request:
+    paths:
+      - '.github/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: actionlint + shellcheck + yamllint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.7
+          # Inline-shellcheck of run: blocks stays disabled: the Phase-3
+          # extraction moved the giant blocks to .github/scripts/ (shellcheck'd
+          # below), but the remaining inline docker bash -c blocks (notably in
+          # publish-rpm-repo.yml) trip shellcheck false positives on nested
+          # quoting (SC1078/SC1083). Revisit if those blocks are extracted too.
+          ./actionlint -color -shellcheck=
+
+      - name: shellcheck (.github/scripts)
+        run: |
+          shellcheck --version | head -2
+          shellcheck .github/scripts/*.sh
+
+      - name: yamllint (workflows)
+        run: |
+          pipx install yamllint
+          yamllint -d "{extends: relaxed, rules: {line-length: disable, trailing-spaces: disable}}" .github/workflows/
