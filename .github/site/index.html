@@ -59,7 +59,12 @@ EOF
 dnf module disable -y nginx  <span class="cmt"># skip on EL9/EL10</span>
 
 <span class="cmt"># Step 2 &mdash; Install Nginx (+ all modules, optional)</span>
+<span class="cmt"># Note: nginx-module-* pulls in all 26 modules and their system libraries</span>
+<span class="cmt"># (luajit, libmaxminddb, gd, libxslt, ...). Minimal install alternative:</span>
+<span class="cmt">#   dnf install -y centminmod-nginx</span>
 dnf install -y centminmod-nginx nginx-module-*</pre>
+<p><code>nginx-module-headers-more</code> is always installed with the base package: the stock
+<code>nginx.conf</code> sets the Centmin Mod identity headers via <code>more_set_headers</code>.</p>
 
 <p>Start and enable Nginx:</p>
 <pre>systemctl start nginx
