@@ -1,10 +1,15 @@
 # rpmlint filters for Centmin Mod nginx RPMs — accepted exceptions only.
 # Legacy addFilter format: works with rpmlint 1.x (-f) and 2.x (-r).
 # Anything rpmlint reports that is NOT filtered here is worth a look.
+# Tuned against real findings from run 28692161298 (EL8/9/10, 108 RPMs).
 
 # Centmin Mod installs to /usr/local/nginx and /usr/local/sbin by design
 # (matches CM source-build layout; upstream nginx.org uses /etc/nginx).
 addFilter(r'dir-or-file-in-usr-local')
+
+# Config lives under /usr/local/nginx/conf (CM layout), so %config(noreplace)
+# entries are outside /etc — intentional, same reason as above
+addFilter(r'non-etc-or-var-file-marked-as-conffile')
 
 # Upstream nginx.org license string, kept verbatim ("2-clause BSD-like license")
 addFilter(r'invalid-license')
@@ -12,15 +17,25 @@ addFilter(r'invalid-license')
 # nginx has no man pages upstream; docs live at nginx.org
 addFilter(r'no-manual-page-for-binary')
 
-# Module packages ship only the .so + COPYRIGHT; no separate docs
-addFilter(r'no-documentation')
-
 # awslc/openssl variants intentionally link crypto statically
 # (CM design: pinned crypto version independent of the OS)
 addFilter(r'statically-linked-binary')
 
-# nginx binary is intentionally not split into a -devel package; module
-# .so files under /usr/local/nginx/modules are dlopen()ed by nginx, not
-# linked against, so library-without-ldconfig-* checks don't apply
-addFilter(r'library-without-ldconfig-post')
-addFilter(r'library-without-ldconfig-postun')
+# CM design: proxy_temp_path is /tmp/nginx_proxy — %post pre-creates it
+addFilter(r'use-tmp-in-%post')
+
+# lua module ships the bundled nginx-luajit headers on purpose so lua C
+# modules can be compiled against the exact luajit2 nginx embeds
+addFilter(r'devel-file-in-non-devel-package /usr/include/nginx-luajit')
+
+# Upstream pkg-oss provides style (webserver, nginx-rVERSION aliases used
+# by the module dependency scheme) — unversioned by design
+addFilter(r'unversioned-explicit-provides')
+
+# "nginx" is spelled lowercase in summaries (brand), not a typo
+addFilter(r'summary-not-capitalized')
+
+# Filters cover all 7 crypto/zlib variants and both rpmlint major versions;
+# a filter unused in one variant is load-bearing in another (e.g.
+# statically-linked-binary only fires on awslc/openssl builds)
+addFilter(r'unused-rpmlintrc-filter')

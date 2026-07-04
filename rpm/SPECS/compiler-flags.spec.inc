@@ -6,8 +6,8 @@
 # the base binary links with -pie, modules build .so files and must not —
 # each template defines its own WITH_LD_OPT next to its placeholder.
 #
-# %{optflags} intentionally NOT used because it reflects system GCC defaults,
-# not the gcc-toolset compiler. Dropping %{optflags} loses Red Hat's -specs=
+# %%{optflags} intentionally NOT used because it reflects system GCC defaults,
+# not the gcc-toolset compiler. Dropping %%{optflags} loses Red Hat's -specs=
 # annotations but gains explicit control matching CM's build configuration.
 %if 0%{?rhel} >= 10
 %define WITH_CC_OPT -O3 -g -fPIC -fstack-protector-strong -fstack-clash-protection -Wimplicit-fallthrough=0 -Wformat -Wformat-security -Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=3 --param=ssp-buffer-size=4 $(pcre2-config --cflags)

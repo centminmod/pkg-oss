@@ -9,7 +9,7 @@
 %define opt_linker %%LINKER%%
 %define opt_autofdo %%AUTOFDO%%
 
-# Centmin Mod path macros — NEVER redefine global RPM macros (%{_libdir} etc.)
+# Centmin Mod path macros — NEVER redefine global RPM macros (%%{_libdir} etc.)
 %global cm_prefix       /usr/local/nginx
 %global cm_sbindir      /usr/local/sbin
 %global cm_confdir      %{cm_prefix}/conf
@@ -421,9 +421,6 @@ make %{?_smp_mflags}
 %{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/koi-utf
 %{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/koi-win
 %{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/win-utf
-
-%clean
-%{__rm} -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root)
