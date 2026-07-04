@@ -123,230 +123,65 @@ jobs:
         run: |
           mkdir -p output
           docker run --rm --user root \
+            -e SCENARIO=A \
+            -e SCENARIO_LABEL="Base, no modules" \
+            -e LOAD_MODULES=n \
             -e REQUESTS=${{ inputs.h2load_requests || '100000' }} \
             -e CLIENTS=${{ inputs.h2load_clients || '100' }} \
             -e STREAMS=${{ inputs.h2load_streams || '10' }} \
             -e RUNS=${{ inputs.runs || '3' }} \
             -v ${{ github.workspace }}/output-base:/rpms \
             -v ${{ github.workspace }}/output:/output \
-            rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
-              # Install base nginx only
-              main_rpm=$(ls /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
-              rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -2
-              dnf -y install nghttp2 2>&1 | tail -3
-
-              # TLS cert
-              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
-                -keyout /tmp/bench.key -out /tmp/bench.crt \
-                -subj "/CN=localhost" 2>/dev/null
-              mkdir -p /usr/local/nginx/conf/conf.d
-              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / { root /usr/local/nginx/html; }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
-
-              /usr/local/sbin/nginx
-              sleep 1
-
-              echo "=== Benchmark A: Base, no modules ==="
-              RESULT_FILE=/output/bench-A.txt
-              > "$RESULT_FILE"
-              for THREADS in 1 2 4; do
-                echo "--- threads=$THREADS ---"
-                # Warm-up
-                h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
-                for run in $(seq 1 ${RUNS}); do
-                  OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
-                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
-                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
-                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
-                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
-                  echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
-                  echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
-                done
-              done
-              /usr/local/sbin/nginx -s quit 2>/dev/null || true
-              cat "$RESULT_FILE"
-            '
+            -v ${{ github.workspace }}/.github/scripts:/scripts:ro \
+            rpmbuild:el${{ inputs.el_version || '9' }} bash /scripts/benchmark-scenario.sh
 
       # === BENCHMARK B: Base, with modules ===
       - name: "Benchmark B: Base, with modules"
         run: |
           docker run --rm --user root \
+            -e SCENARIO=B \
+            -e SCENARIO_LABEL="Base, with modules" \
+            -e LOAD_MODULES=y \
             -e REQUESTS=${{ inputs.h2load_requests || '100000' }} \
             -e CLIENTS=${{ inputs.h2load_clients || '100' }} \
             -e STREAMS=${{ inputs.h2load_streams || '10' }} \
             -e RUNS=${{ inputs.runs || '3' }} \
             -v ${{ github.workspace }}/output-base:/rpms \
             -v ${{ github.workspace }}/output:/output \
-            rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
-              # Install base nginx + all module RPMs
-              main_rpm=$(ls /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
-              rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -2
-              for rpm_file in /rpms/nginx-module-*.x86_64.rpm; do
-                [ -f "$rpm_file" ] || continue
-                echo "$rpm_file" | grep -q debuginfo && continue
-                rpm -ivh --nodeps "$rpm_file" 2>&1 | tail -1
-              done
-              dnf -y install nghttp2 2>&1 | tail -3
-
-              MODULE_DIR=/usr/local/nginx/modules
-              # Generate load_module config (NDK first, skip debug)
-              MODULES_CONF=/tmp/modules.conf
-              > "$MODULES_CONF"
-              if [ -f "$MODULE_DIR/ndk_http_module.so" ]; then
-                echo "load_module $MODULE_DIR/ndk_http_module.so;" >> "$MODULES_CONF"
-              fi
-              for so in "$MODULE_DIR"/*.so; do
-                [ -f "$so" ] || continue
-                basename "$so" | grep -q "\-debug\.so$" && continue
-                basename "$so" | grep -q "^ndk_http_module.so$" && continue
-                echo "load_module $so;" >> "$MODULES_CONF"
-              done
-              MOD_COUNT=$(grep -c "^load_module" "$MODULES_CONF")
-              echo "Loading $MOD_COUNT modules"
-
-              # Insert load_module before events block in nginx.conf
-              sed -i "/^events/e cat $MODULES_CONF" /usr/local/nginx/conf/nginx.conf
-
-              # TLS cert
-              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
-                -keyout /tmp/bench.key -out /tmp/bench.crt \
-                -subj "/CN=localhost" 2>/dev/null
-              mkdir -p /usr/local/nginx/conf/conf.d
-              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / { root /usr/local/nginx/html; }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
-
-              /usr/local/sbin/nginx -t 2>&1
-              /usr/local/sbin/nginx
-              sleep 1
-
-              echo "=== Benchmark B: Base, with $MOD_COUNT modules ==="
-              RESULT_FILE=/output/bench-B.txt
-              > "$RESULT_FILE"
-              for THREADS in 1 2 4; do
-                echo "--- threads=$THREADS ---"
-                h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
-                for run in $(seq 1 ${RUNS}); do
-                  OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
-                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
-                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
-                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
-                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
-                  echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
-                  echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
-                done
-              done
-              /usr/local/sbin/nginx -s quit 2>/dev/null || true
-              cat "$RESULT_FILE"
-            '
+            -v ${{ github.workspace }}/.github/scripts:/scripts:ro \
+            rpmbuild:el${{ inputs.el_version || '9' }} bash /scripts/benchmark-scenario.sh
 
       # === BENCHMARK C: Optimized, no modules ===
       - name: "Benchmark C: Optimized, no modules"
         run: |
           docker run --rm --user root \
+            -e SCENARIO=C \
+            -e SCENARIO_LABEL="Optimized, no modules" \
+            -e LOAD_MODULES=n \
             -e REQUESTS=${{ inputs.h2load_requests || '100000' }} \
             -e CLIENTS=${{ inputs.h2load_clients || '100' }} \
             -e STREAMS=${{ inputs.h2load_streams || '10' }} \
             -e RUNS=${{ inputs.runs || '3' }} \
             -v ${{ github.workspace }}/output-optimized:/rpms \
             -v ${{ github.workspace }}/output:/output \
-            rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
-              main_rpm=$(ls /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
-              rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -2
-              dnf -y install nghttp2 2>&1 | tail -3
-
-              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
-                -keyout /tmp/bench.key -out /tmp/bench.crt \
-                -subj "/CN=localhost" 2>/dev/null
-              mkdir -p /usr/local/nginx/conf/conf.d
-              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / { root /usr/local/nginx/html; }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
-
-              /usr/local/sbin/nginx
-              sleep 1
-
-              echo "=== Benchmark C: Optimized, no modules ==="
-              RESULT_FILE=/output/bench-C.txt
-              > "$RESULT_FILE"
-              for THREADS in 1 2 4; do
-                echo "--- threads=$THREADS ---"
-                h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
-                for run in $(seq 1 ${RUNS}); do
-                  OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
-                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
-                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
-                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
-                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
-                  echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
-                  echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
-                done
-              done
-              /usr/local/sbin/nginx -s quit 2>/dev/null || true
-              cat "$RESULT_FILE"
-            '
+            -v ${{ github.workspace }}/.github/scripts:/scripts:ro \
+            rpmbuild:el${{ inputs.el_version || '9' }} bash /scripts/benchmark-scenario.sh
 
       # === BENCHMARK D: Optimized, with modules ===
       - name: "Benchmark D: Optimized, with modules"
         run: |
           docker run --rm --user root \
+            -e SCENARIO=D \
+            -e SCENARIO_LABEL="Optimized, with modules" \
+            -e LOAD_MODULES=y \
             -e REQUESTS=${{ inputs.h2load_requests || '100000' }} \
             -e CLIENTS=${{ inputs.h2load_clients || '100' }} \
             -e STREAMS=${{ inputs.h2load_streams || '10' }} \
             -e RUNS=${{ inputs.runs || '3' }} \
             -v ${{ github.workspace }}/output-optimized:/rpms \
             -v ${{ github.workspace }}/output:/output \
-            rpmbuild:el${{ inputs.el_version || '9' }} bash -c '
-              main_rpm=$(ls /rpms/centminmod-nginx*-[0-9]*.x86_64.rpm 2>/dev/null | grep -v debuginfo | grep -v module | head -1)
-              rpm -ivh --nodeps "$main_rpm" 2>&1 | tail -2
-              for rpm_file in /rpms/nginx-module-*.x86_64.rpm; do
-                [ -f "$rpm_file" ] || continue
-                echo "$rpm_file" | grep -q debuginfo && continue
-                rpm -ivh --nodeps "$rpm_file" 2>&1 | tail -1
-              done
-              dnf -y install nghttp2 2>&1 | tail -3
-
-              MODULE_DIR=/usr/local/nginx/modules
-              MODULES_CONF=/tmp/modules.conf
-              > "$MODULES_CONF"
-              if [ -f "$MODULE_DIR/ndk_http_module.so" ]; then
-                echo "load_module $MODULE_DIR/ndk_http_module.so;" >> "$MODULES_CONF"
-              fi
-              for so in "$MODULE_DIR"/*.so; do
-                [ -f "$so" ] || continue
-                basename "$so" | grep -q "\-debug\.so$" && continue
-                basename "$so" | grep -q "^ndk_http_module.so$" && continue
-                echo "load_module $so;" >> "$MODULES_CONF"
-              done
-              MOD_COUNT=$(grep -c "^load_module" "$MODULES_CONF")
-              echo "Loading $MOD_COUNT modules"
-
-              sed -i "/^events/e cat $MODULES_CONF" /usr/local/nginx/conf/nginx.conf
-
-              openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
-                -keyout /tmp/bench.key -out /tmp/bench.crt \
-                -subj "/CN=localhost" 2>/dev/null
-              mkdir -p /usr/local/nginx/conf/conf.d
-              printf "server {\n    listen 8443 ssl;\n    http2 on;\n    server_name localhost;\n    ssl_certificate /tmp/bench.crt;\n    ssl_certificate_key /tmp/bench.key;\n    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_session_cache shared:SSL:1m;\n    location / { root /usr/local/nginx/html; }\n}\n" > /usr/local/nginx/conf/conf.d/bench-ssl.conf
-
-              /usr/local/sbin/nginx -t 2>&1
-              /usr/local/sbin/nginx
-              sleep 1
-
-              echo "=== Benchmark D: Optimized, with $MOD_COUNT modules ==="
-              RESULT_FILE=/output/bench-D.txt
-              > "$RESULT_FILE"
-              for THREADS in 1 2 4; do
-                echo "--- threads=$THREADS ---"
-                h2load -n 10000 -c 50 -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ > /dev/null 2>&1
-                for run in $(seq 1 ${RUNS}); do
-                  OUT=$(h2load -n ${REQUESTS} -c ${CLIENTS} -m ${STREAMS} -t ${THREADS} https://127.0.0.1:8443/ 2>&1)
-                  REQS=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+ req/s" | sed "s/ req\/s//")
-                  THROUGHPUT=$(echo "$OUT" | grep "finished in" | grep -oE "[0-9]+\.[0-9]+MB/s" | sed "s/MB\/s//")
-                  LAT_MEAN=$(echo "$OUT" | grep "time for request" | awk "{print \$6}" | sed "s/ms//")
-                  LAT_MAX=$(echo "$OUT" | grep "time for request" | awk "{print \$5}" | sed "s/ms//")
-                  echo "threads=${THREADS} run=${run} reqs=${REQS} throughput=${THROUGHPUT} latency_mean=${LAT_MEAN} latency_max=${LAT_MAX}" >> "$RESULT_FILE"
-                  echo "  t=${THREADS} run=${run}: ${REQS} req/s, ${LAT_MEAN}ms mean latency"
-                done
-              done
-              /usr/local/sbin/nginx -s quit 2>/dev/null || true
-              cat "$RESULT_FILE"
-            '
+            -v ${{ github.workspace }}/.github/scripts:/scripts:ro \
+            rpmbuild:el${{ inputs.el_version || '9' }} bash /scripts/benchmark-scenario.sh
 
       # === GENERATE SUMMARY ===
       - name: Generate benchmark summary
