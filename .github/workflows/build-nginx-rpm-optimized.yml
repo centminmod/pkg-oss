@@ -144,6 +144,17 @@ jobs:
       - name: List built RPMs
         run: ls -lh output/
 
+      # Phase 5.1: non-blocking packaging-quality gate — findings show as a
+      # failed step but never fail the build. Accepted exceptions are
+      # documented in rpm/SPECS/.rpmlintrc.
+      - name: rpmlint (non-blocking)
+        continue-on-error: true
+        run: |
+          docker run --rm -u root \
+            -v ${{ github.workspace }}/output:/output:ro \
+            -v ${{ github.workspace }}/.github/scripts:/scripts:ro \
+            rpmbuild:el${{ matrix.el_version }} bash /scripts/rpmlint-check.sh
+
       - name: Verify module RPMs
         run: |
           echo "=== Module RPM verification ==="
