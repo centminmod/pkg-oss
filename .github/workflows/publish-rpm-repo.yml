@@ -559,6 +559,83 @@ jobs:
             echo "DONE: SRPMS metadata blobs uploaded"
           fi
 
+      - name: 'Upload Phase 2.5: rollback snapshot + publish manifest'
+        run: |
+          # Phase 4.4: persist the CURRENT live entry point + a manifest of this
+          # publish under <variant>/el/<EL>/rollback/<TS>-run<ID>/ so
+          # rollback-rpm-repo.yml can restore the previous repo state.
+          TS=$(date -u +%Y%m%dT%H%M%SZ)
+          SNAP_BASE="${VARIANT}/el/${EL_VERSION}/rollback"
+          SNAP="${SNAP_BASE}/${TS}-run${{ github.run_id }}"
+          echo "SNAP=${SNAP}" >> "$GITHUB_ENV"
+          mkdir -p snapshot
+
+          echo "=== Snapshot previous repomd.xml → s3://${R2_BUCKET}/${SNAP}/ ==="
+          if aws s3 cp "s3://${R2_BUCKET}/${REPO_PATH}/repodata/repomd.xml" snapshot/repomd.xml \
+               --endpoint-url "${R2_ENDPOINT}" 2>/dev/null; then
+            # pre-signing-era publishes have no .asc — tolerate
+            aws s3 cp "s3://${R2_BUCKET}/${REPO_PATH}/repodata/repomd.xml.asc" snapshot/repomd.xml.asc \
+              --endpoint-url "${R2_ENDPOINT}" 2>/dev/null || echo "note: previous repomd.xml.asc absent"
+            aws s3 cp snapshot/repomd.xml "s3://${R2_BUCKET}/${SNAP}/repomd.xml" \
+              --endpoint-url "${R2_ENDPOINT}" --content-type "application/xml"
+            if [ -f snapshot/repomd.xml.asc ]; then
+              aws s3 cp snapshot/repomd.xml.asc "s3://${R2_BUCKET}/${SNAP}/repomd.xml.asc" \
+                --endpoint-url "${R2_ENDPOINT}" --content-type "application/pgp-signature"
+            fi
+            # SRPMS entry point too, when it exists
+            if aws s3 cp "s3://${R2_BUCKET}/${SRPM_PATH}/repodata/repomd.xml" snapshot/srpms-repomd.xml \
+                 --endpoint-url "${R2_ENDPOINT}" 2>/dev/null; then
+              aws s3 cp snapshot/srpms-repomd.xml "s3://${R2_BUCKET}/${SNAP}/srpms-repomd.xml" \
+                --endpoint-url "${R2_ENDPOINT}" --content-type "application/xml"
+              aws s3 cp "s3://${R2_BUCKET}/${SRPM_PATH}/repodata/repomd.xml.asc" snapshot/srpms-repomd.xml.asc \
+                --endpoint-url "${R2_ENDPOINT}" 2>/dev/null \
+                && aws s3 cp snapshot/srpms-repomd.xml.asc "s3://${R2_BUCKET}/${SNAP}/srpms-repomd.xml.asc" \
+                     --endpoint-url "${R2_ENDPOINT}" --content-type "application/pgp-signature" \
+                || echo "note: previous SRPMS repomd.xml.asc absent"
+            fi
+            echo "DONE: previous entry point snapshotted to ${SNAP}/"
+          else
+            echo "No previous repomd.xml — first publish for ${REPO_PATH}; snapshot skipped"
+          fi
+
+          echo ""
+          echo "=== Publish manifest (object keys + sha256) ==="
+          (
+            cd "repo/${REPO_PATH}"
+            find . -type f | sed 's|^\./||' | sort | while read -r f; do
+              SHA=$(sha256sum "$f" | cut -d' ' -f1)
+              SIZE=$(stat -c%s "$f")
+              jq -n --arg k "${REPO_PATH}/${f}" --arg s "$SHA" --argjson z "$SIZE" \
+                '{key:$k, sha256:$s, size:$z}'
+            done
+          ) | jq -s \
+            --arg ts "$TS" \
+            --arg variant "$VARIANT" \
+            --arg el "$EL_VERSION" \
+            --arg publish_run "${{ github.run_id }}" \
+            --arg source_run "${{ inputs.run_id }}" \
+            --arg commit "${{ github.sha }}" \
+            '{schema: 1, timestamp: $ts, variant: $variant, el: $el,
+              publish_run: $publish_run, source_build_run: $source_run,
+              commit: $commit, files: .}' > manifest.json
+          jq -r '.files | length as $n | "\($n) files in manifest"' manifest.json
+          aws s3 cp manifest.json "s3://${R2_BUCKET}/${SNAP}/manifest.json" \
+            --endpoint-url "${R2_ENDPOINT}" --content-type "application/json"
+
+          echo ""
+          echo "=== Prune old rollback snapshots (keep 10) ==="
+          PREFIXES=$(aws s3 ls "s3://${R2_BUCKET}/${SNAP_BASE}/" --endpoint-url "${R2_ENDPOINT}" \
+            | awk '/PRE /{print $2}' | sort)
+          COUNT=$(echo "$PREFIXES" | grep -c . || true)
+          echo "Snapshots present: ${COUNT}"
+          if [ "$COUNT" -gt 10 ]; then
+            echo "$PREFIXES" | head -n $((COUNT - 10)) | while read -r p; do
+              echo "Pruning old snapshot: ${SNAP_BASE}/${p}"
+              aws s3 rm "s3://${R2_BUCKET}/${SNAP_BASE}/${p}" \
+                --endpoint-url "${R2_ENDPOINT}" --recursive
+            done
+          fi
+
       - name: 'Upload Phase 3: repomd.xml entry point'
         run: |
           echo "=== Upload Phase 3: Entry point files ==="
