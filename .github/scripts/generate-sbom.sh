@@ -29,7 +29,7 @@ trap 'rm -f "$COMPONENTS"' EXIT
 SRC_COUNT=0
 if ls "$ATTEST_DIR"/attest-* >/dev/null 2>&1; then
   while read -r name version sha512; do
-    [ -n "$name" ] && [ -n "$version" ] || continue
+    if [ -z "$name" ] || [ -z "$version" ]; then continue; fi
     jq -n --arg n "$name" --arg v "$version" --arg h "${sha512:-}" \
       '{type: "library", name: $n, version: $v, scope: "required"}
        + (if $h != "" then {hashes: [{alg: "SHA-512", content: $h}]} else {} end)' \
