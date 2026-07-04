@@ -1,0 +1,69 @@
+name: Repo Health Check
+
+# Phase 4.5: scheduled validation of every published variant/EL repo on the
+# CDN (repomd.xml integrity, blob reachability, GPG signature, sample RPM).
+# Opens/updates a GitHub issue on failure. NOTE: the cron only fires once
+# this file is on the default branch (master); use workflow_dispatch until
+# then.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'  # daily 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: repo-health-check
+  cancel-in-progress: false
+
+jobs:
+  health-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository (scripts only)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          sparse-checkout: |
+            .github/scripts
+
+      - name: Run health check
+        id: check
+        run: |
+          RC=0
+          bash .github/scripts/repo-health-check.sh > health-report.txt 2>&1 || RC=$?
+          cat health-report.txt
+          exit $RC
+
+      - name: Open or update GitHub issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create repo-health --color D93F0B \
+            --description "Automated repo health check failures" 2>/dev/null || true
+
+          {
+            echo "The scheduled repo health check failed on $(date -u '+%Y-%m-%d %H:%M UTC')."
+            echo ""
+            echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo '```'
+            grep -E "^(FAIL|WARN|Repo health)" health-report.txt || tail -30 health-report.txt
+            echo '```'
+          } > issue-body.md
+
+          EXISTING=$(gh issue list --label repo-health --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "Updating existing issue #${EXISTING}"
+            gh issue comment "$EXISTING" --body-file issue-body.md
+          else
+            gh issue create \
+              --title "Repo health check failed: $(date -u '+%Y-%m-%d')" \
+              --label repo-health \
+              --body-file issue-body.md
+          fi
