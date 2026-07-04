@@ -106,6 +106,34 @@ for VARIANT in $VARIANTS; do
   done
 done
 
+# --- Phase 6.3: R2 storage usage (billing proxy) ---
+# Runs only when the workflow passes R2 credentials; skipped otherwise so the
+# script stays runnable against the public CDN alone. Thresholds in GiB are
+# env-tunable; R2 free tier is 10 GB-month, so warn/alert before it is hit.
+if [ -n "${R2_ENDPOINT:-}" ] && [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
+  WARN_GB=${R2_STORAGE_WARN_GB:-7}
+  FAIL_GB=${R2_STORAGE_FAIL_GB:-9}
+  BUCKET=${R2_BUCKET:-rpm-nginx}
+  echo ""
+  if TOTALS=$(aws s3 ls "s3://${BUCKET}" --recursive --summarize \
+        --endpoint-url "${R2_ENDPOINT}" | tail -2); then
+    BYTES=$(echo "$TOTALS" | awk '/Total Size:/ {print $3}')
+    OBJECTS=$(echo "$TOTALS" | awk '/Total Objects:/ {print $3}')
+    GIB=$(awk -v b="$BYTES" 'BEGIN{printf "%.2f", b/1024/1024/1024}')
+    echo "R2 storage: ${OBJECTS} objects, ${GIB} GiB in bucket ${BUCKET} (warn ${WARN_GB}, fail ${FAIL_GB})"
+    if awk -v a="$GIB" -v b="$FAIL_GB" 'BEGIN{exit !(a>=b)}'; then
+      note "FAIL: R2 storage ${GIB} GiB >= ${FAIL_GB} GiB (billing risk — prune old NEVRAs via prune-rpm-repo.yml)"
+      FAIL=$((FAIL+1))
+    elif awk -v a="$GIB" -v b="$WARN_GB" 'BEGIN{exit !(a>=b)}'; then
+      note "WARN: R2 storage ${GIB} GiB >= ${WARN_GB} GiB (approaching the 10 GB free tier)"
+      WARN=$((WARN+1))
+    fi
+  else
+    note "FAIL: R2 storage check errored (aws s3 ls on bucket ${BUCKET})"
+    FAIL=$((FAIL+1))
+  fi
+fi
+
 echo ""
 echo "=========================================="
 echo "Repo health: ${CHECKED} published repos checked, ${FAIL} failing, ${WARN} warnings"

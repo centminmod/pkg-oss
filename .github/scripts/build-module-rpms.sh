@@ -113,3 +113,20 @@ if [ -f /tmp/module-logs/njs.log ]; then
   echo "::endgroup::"
 fi
 find ../RPMS ../SRPMS -name "*.rpm" -exec cp -v {} /output/ \;
+
+# Phase 6.2: export provenance attest data (one "name version sha512" line per
+# contrib dep) for SBOM generation at publish time. attest-module-* files were
+# produced by the module-% targets above; attest-base is cheap to regenerate.
+# Crypto/zlib sources are not module contrib deps — record them explicitly.
+rm -f attest-base attest-extra
+make -s CONTRIB=/home/builder/contrib attest-base 2>/dev/null || true
+attest_extra() {
+  local dep=$1 ver sum
+  ver=$(sed -nE 's/^[A-Z0-9_]*(VERSION|COMMIT) := (.*)$/\2/p' "/home/builder/contrib/src/${dep}/version" | head -1)
+  sum=$(awk -v v="$ver" 'index($0, v) {print $1; exit}' "/home/builder/contrib/src/${dep}/SHA512SUMS" 2>/dev/null || true)
+  echo "${dep} ${ver} ${sum}" >> attest-extra
+}
+if [ "$CRYPTO" = "awslc" ]; then attest_extra awslc; fi
+if [ "$CRYPTO" = "openssl" ]; then attest_extra openssl; fi
+if [ "$ZLIB" = "cloudflare" ]; then attest_extra cf-zlib; fi
+cp -v attest-base attest-module-* attest-extra /output/ 2>/dev/null || true

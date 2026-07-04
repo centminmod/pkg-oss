@@ -34,6 +34,20 @@ jobs:
         with:
           sparse-checkout: |
             .github/site
+            docs
+            contrib
+
+      # Phase 6.3: render the release changelog from docs/nginx.xml via the
+      # upstream xslscript/xsltproc toolchain (same one the RPM builds use for
+      # %changelog) and publish it as /CHANGES.txt next to index.html.
+      - name: Render changelog (CHANGES)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xsltproc libxml2-utils
+          mkdir -p contrib/tarballs
+          make -C docs changes DEST=/tmp/docs-out
+          echo "=== CHANGES head ==="
+          head -30 /tmp/docs-out/CHANGES
 
       - name: Render, upload and purge index.html
         run: |
@@ -50,12 +64,18 @@ jobs:
             --content-type "text/html; charset=utf-8" \
             --cache-control "public, max-age=300"
 
+          echo "=== Upload CHANGES.txt ==="
+          aws s3 cp /tmp/docs-out/CHANGES "s3://${R2_BUCKET}/CHANGES.txt" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "text/plain; charset=utf-8" \
+            --cache-control "public, max-age=300"
+
           echo "=== Purge CDN cache ==="
           PURGE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
             "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/purge_cache" \
             -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            --data "{\"files\":[\"https://${CUSTOM_DOMAIN}/index.html\",\"https://${CUSTOM_DOMAIN}/\"]}")
+            --data "{\"files\":[\"https://${CUSTOM_DOMAIN}/index.html\",\"https://${CUSTOM_DOMAIN}/\",\"https://${CUSTOM_DOMAIN}/CHANGES.txt\"]}")
           HTTP_CODE=$(echo "$PURGE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
           echo "Purge HTTP code: $HTTP_CODE"
           if [ "$HTTP_CODE" != "200" ]; then
@@ -68,4 +88,9 @@ jobs:
             echo "PASS: live index.html shows 'Updated ${UPDATED}'"
           else
             echo "WARNING: live index.html does not yet show the new date (CDN propagation)"
+          fi
+          if curl -sf "https://${CUSTOM_DOMAIN}/CHANGES.txt" | head -5 | grep -q "."; then
+            echo "PASS: live CHANGES.txt serves content"
+          else
+            echo "WARNING: live CHANGES.txt not yet available (CDN propagation)"
           fi
