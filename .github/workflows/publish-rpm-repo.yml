@@ -49,6 +49,9 @@ on:
 permissions:
   actions: read
   contents: read
+  # Phase 6.2: build provenance attestations on published (signed) RPMs
+  id-token: write
+  attestations: write
 
 concurrency:
   group: publish-${{ inputs.variant }}-el${{ inputs.el_version }}
@@ -390,6 +393,31 @@ jobs:
             -v "$(pwd)/.github/scripts:/scripts:ro" \
             almalinux:9 bash /scripts/build-release-rpm.sh
 
+      # Phase 6.2: SBOM + provenance run on the SIGNED RPMs — GPG signing
+      # rewrites the RPM bytes, so attesting at build time would produce
+      # digests that never match the published files.
+      - name: Generate CycloneDX SBOM
+        run: |
+          ATTEST_DIR=downloaded-rpms \
+          RPM_DIR="repo/${REPO_PATH}" \
+          SRPM_DIR="repo/${SRPM_PATH}" \
+          VARIANT="${VARIANT}" \
+          EL_VERSION="${EL_VERSION}" \
+          OUTPUT=sbom.cdx.json \
+            bash .github/scripts/generate-sbom.sh
+          jq '{serialNumber, metadata: .metadata.component, components: (.components | length)}' sbom.cdx.json
+
+      # Non-blocking (like rpmlint): a Sigstore/attestation-service outage
+      # must not block a publish. Verify with:
+      #   gh attestation verify <file>.rpm --repo centminmod/pkg-oss
+      - name: Attest build provenance (non-blocking)
+        continue-on-error: true
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            repo/${{ env.REPO_PATH }}/*.rpm
+            repo/${{ env.SRPM_PATH }}/*.rpm
+
       - name: Generate repository metadata (createrepo_c)
         run: |
           docker run --rm \
@@ -558,6 +586,15 @@ jobs:
               --no-progress
             echo "DONE: SRPMS metadata blobs uploaded"
           fi
+
+      - name: 'Upload Phase 2c: CycloneDX SBOM'
+        run: |
+          echo "=== Upload Phase 2c: SBOM ==="
+          aws s3 cp sbom.cdx.json "s3://${R2_BUCKET}/${REPO_PATH}/sbom.cdx.json" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --content-type "application/json" \
+            --cache-control "public, max-age=300"
+          echo "DONE: https://${CUSTOM_DOMAIN}/${REPO_PATH}/sbom.cdx.json"
 
       - name: 'Upload Phase 2.5: rollback snapshot + publish manifest'
         run: |
