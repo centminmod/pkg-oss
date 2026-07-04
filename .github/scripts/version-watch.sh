@@ -18,7 +18,7 @@
 #   - xslscript, nginx-tests: build/test tooling, not shipped code
 set -uo pipefail
 
-cd "$(dirname "$0")/../.."   # repo root
+cd "$(dirname "$0")/../.." || exit 1   # repo root
 REPORT="${WATCH_REPORT:-version-watch-report.md}"
 
 # dir|method|source|filter|strip
