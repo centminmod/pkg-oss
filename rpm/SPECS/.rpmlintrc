@@ -35,6 +35,45 @@ addFilter(r'unversioned-explicit-provides')
 # "nginx" is spelled lowercase in summaries (brand), not a typo
 addFilter(r'summary-not-capitalized')
 
+# The generated spec is nginx.spec inside a centminmod-nginx src.rpm — the
+# whole build system keys on the nginx.spec name (make nginx.spec)
+addFilter(r'invalid-spec-name')
+
+# EL10 %build sources /usr/lib/gcc-toolset/15-env.source to activate the
+# toolset — a build-time path, not a packaged library path
+addFilter(r'hardcoded-library-path.*gcc-toolset')
+
+# /etc/logrotate.d/nginx is named after the service (nginx), not the
+# package (centminmod-nginx) — deliberate, matches the systemd unit name
+addFilter(r'incoherent-logrotate-file')
+
+# Local sources (nginx.conf, logrotate, *.sh, drop-in confs) have no URL
+addFilter(r'invalid-url')
+
+# nginx's ./configure is not autoconf; --libdir does not exist
+addFilter(r'configure-without-libdir-spec')
+
+# rpmlint 1.x doesn't recognize the modern `%patch -PNNN` syntax the
+# Makefile generates (rpm 4.18+); patches ARE applied in %prep
+addFilter(r'patch-not-applied')
+
+# Changelog entries use upstream version-release (no %{?dist}.cmm suffix
+# or epoch); versions are managed by docs/ changelog templates
+addFilter(r'incoherent-version-in-changelog')
+
+# Generated specs mix tabs (Makefile-substituted blocks) and spaces (template)
+addFilter(r'mixed-use-of-spaces-and-tabs')
+
+# nginx calls low-level OpenSSL APIs by design (its own TLS handling);
+# system crypto-policy compliance is not applicable to a web server core
+addFilter(r'crypto-policy-non-compliance-openssl')
+
+# nginx.check-reload.sh is an executable helper shipped in SOURCES
+addFilter(r'strange-permission.*\.sh')
+
+# %post chmods log files it creates under /usr/local/nginx/logs — intended
+addFilter(r'dangerous-command-in-%post chmod')
+
 # Filters cover all 7 crypto/zlib variants and both rpmlint major versions;
 # a filter unused in one variant is load-bearing in another (e.g.
 # statically-linked-binary only fires on awslc/openssl builds)

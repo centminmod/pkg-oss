@@ -314,7 +314,7 @@ make %{?_smp_mflags}
 %{__make} DESTDIR=$RPM_BUILD_ROOT INSTALLDIRS=vendor install
 
 # With --prefix=/usr/local/nginx, make install puts html at cm_htmldir already
-# No need to move html — it's already at %{cm_htmldir}
+# No need to move html — it's already at %%{cm_htmldir}
 
 # Remove .default config files and fastcgi.conf installed by make install
 %{__rm} -f $RPM_BUILD_ROOT%{cm_confdir}/*.default
