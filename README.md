@@ -181,8 +181,8 @@ RPM builds run inside Docker containers (AlmaLinux 8/9/10). You do NOT need an R
 
 | Workflow | File | Purpose |
 |----------|------|---------|
-| **Build RPM** | `build-nginx-rpm.yml` | Base + module RPMs with crypto/zlib selection |
-| **Build RPM (Optimized)** | `build-nginx-rpm-optimized.yml` | LTO, mold linker, `-march` targeting |
+| **Build RPM** | `build-nginx-rpm.yml` | Base + module RPMs (incl. debuginfo/debugsource) with crypto/zlib selection; non-blocking rpmlint gate |
+| **Build RPM (Optimized)** | `build-nginx-rpm-optimized.yml` | LTO, mold linker, `-march` targeting; non-blocking rpmlint gate |
 | **Build RPM (AutoFDO)** | `build-nginx-rpm-autofdo.yml` | AutoFDO profile-guided optimization (POC) |
 | **Build RPM (BOLT)** | `build-nginx-rpm-bolt.yml` | BOLT post-link binary optimization (POC) |
 | **Publish to R2** | `publish-rpm-repo.yml` | Upload RPMs to Cloudflare R2 + `dnf install` test; persists rollback snapshot + manifest |
