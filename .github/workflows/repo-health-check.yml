@@ -32,6 +32,13 @@ jobs:
 
       - name: Run health check
         id: check
+        env:
+          # Phase 6.3: enables the R2 storage-usage check (billing proxy)
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: rpm-nginx
+          AWS_DEFAULT_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           RC=0
           bash .github/scripts/repo-health-check.sh > health-report.txt 2>&1 || RC=$?
@@ -52,7 +59,7 @@ jobs:
             echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo ""
             echo '```'
-            grep -E "^(FAIL|WARN|Repo health)" health-report.txt || tail -30 health-report.txt
+            grep -E "^(FAIL|WARN|Repo health|R2 storage)" health-report.txt || tail -30 health-report.txt
             echo '```'
           } > issue-body.md
 
