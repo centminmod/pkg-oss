@@ -91,7 +91,15 @@ for pkg in $(rpm -qa --qf '%{NAME}\n' | grep -E "centminmod-nginx|nginx-module" 
 done
 
 echo "Installing test dependencies..."
-dnf install -y --allowerasing redis jq procps-ng brotli libmaxminddb gd libxslt libxml2 libzstd 2>&1 | tail -3
+dnf install -y --allowerasing jq procps-ng brotli libmaxminddb gd libxslt libxml2 libzstd 2>&1 | tail -3
+# EL10 replaced Redis with Valkey (protocol-compatible, valkey-* binaries)
+dnf install -y --allowerasing redis 2>/dev/null | tail -1 || dnf install -y --allowerasing valkey 2>&1 | tail -1
+REDIS_SERVER=$(command -v redis-server || command -v valkey-server) || true
+REDIS_CLI=$(command -v redis-cli || command -v valkey-cli) || true
+if [ -z "$REDIS_SERVER" ] || [ -z "$REDIS_CLI" ]; then
+  echo "ERROR: neither redis nor valkey could be installed"
+  exit 1
+fi
 
 echo ""
 echo "=========================================="
@@ -130,13 +138,13 @@ echo "=========================================="
 echo "--- Setting up test infrastructure ---"
 
 # Start Redis
-redis-server --daemonize yes --loglevel warning
+"$REDIS_SERVER" --daemonize yes --loglevel warning
 sleep 1
-redis-cli PING > /dev/null 2>&1 && echo "Redis: running" || echo "Redis: FAILED to start"
+"$REDIS_CLI" PING > /dev/null 2>&1 && echo "Redis: running" || echo "Redis: FAILED to start"
 
 # Seed Redis test data
-redis-cli SET /test-redis "redis_ok" > /dev/null
-redis-cli SET mykey "redis2_ok" > /dev/null
+"$REDIS_CLI" SET /test-redis "redis_ok" > /dev/null
+"$REDIS_CLI" SET mykey "redis2_ok" > /dev/null
 
 # Create test directories
 mkdir -p /usr/local/nginx/html/static
