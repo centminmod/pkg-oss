@@ -185,9 +185,14 @@ RPM builds run inside Docker containers (AlmaLinux 8/9/10). You do NOT need an R
 | **Build RPM (Optimized)** | `build-nginx-rpm-optimized.yml` | LTO, mold linker, `-march` targeting |
 | **Build RPM (AutoFDO)** | `build-nginx-rpm-autofdo.yml` | AutoFDO profile-guided optimization (POC) |
 | **Build RPM (BOLT)** | `build-nginx-rpm-bolt.yml` | BOLT post-link binary optimization (POC) |
-| **Publish to R2** | `publish-rpm-repo.yml` | Upload RPMs to Cloudflare R2 + `dnf install` test |
-| **Test RPM Repository** | `test-rpm-repo.yml` | Functional test all 26 modules from live R2 repo |
+| **Publish to R2** | `publish-rpm-repo.yml` | Upload RPMs to Cloudflare R2 + `dnf install` test; persists rollback snapshot + manifest |
+| **Test RPM Repository** | `test-rpm-repo.yml` | Functional test all 26 modules + upgrade-path/variant-swap test from live R2 repo |
 | **Benchmark Compare** | `benchmark-compare.yml` | h2load benchmark: base vs optimized (`march` input: v3/v4) |
+| **Rollback Repository** | `rollback-rpm-repo.yml` | Restore a previous repo entry point from a rollback snapshot |
+| **Prune Repository** | `prune-rpm-repo.yml` | Retention: keep newest N NEVRAs, regenerate metadata, delete old blobs (dry-run default) |
+| **Repo Health Check** | `repo-health-check.yml` | Daily cron: validate all published repos on the CDN, opens issue on failure |
+| **Publish index.html** | `publish-index-html.yml` | Single writer for the repo landing page (renders `.github/site/index.html`) |
+| **Configure R2 Lifecycle** | `configure-r2-lifecycle.yml` | One-shot: abort incomplete multipart uploads after 7 days |
 | **Lint** | `lint.yml` | actionlint + shellcheck + yamllint on `.github/**` changes |
 
 All build and benchmark workflows take a `runner` input (`github` default, or `ubicloud` for AVX-512 capable `ubicloud-standard-16` runners — required for `x86-64-v4` builds and benchmarks).
@@ -241,9 +246,14 @@ The publish workflow:
 1. Downloads RPM artifacts from the build run
 2. Verifies complete package set (1 base + 26 modules)
 3. Generates YUM/DNF repository metadata via `createrepo_c`
-4. Uploads to R2 in 4 ordered phases (RPMs, metadata, signature, entry point)
-5. Purges CDN cache
-6. Runs automated `dnf install` test from the live repository
+4. Snapshots the previous `repomd.xml` + writes a publish manifest to `<variant>/el/<EL>/rollback/` (10 kept)
+5. Uploads to R2 in ordered phases (RPMs, metadata, signature, entry point)
+6. Purges CDN cache
+7. Runs automated `dnf install` test from the live repository
+
+To undo a bad publish, dispatch `rollback-rpm-repo.yml` with the variant/EL —
+it restores the newest snapshot entry point (or a named one), verifies all
+referenced metadata blobs still exist, and re-tests installability.
 
 ## Compiler Configuration
 
@@ -300,7 +310,7 @@ Makefile (root)                    # Version management, release automation
 ### Directory Layout
 
 ```
-.github/workflows/          # CI/CD workflows (17 total)
+.github/workflows/          # CI/CD workflows (16 total)
 rpm/SPECS/                   # Spec templates, Makefiles, module definitions
 rpm/SOURCES/                 # nginx.conf, systemd services, config files
 contrib/src/                 # Module source directories with patches
